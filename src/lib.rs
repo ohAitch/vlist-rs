@@ -3,6 +3,7 @@
 #![feature(array_map)]
 #![feature(untagged_unions,min_const_generics)]
 #![feature(arbitrary_enum_discriminant)]
+#![feature(core_intrinsics)]
 
 #![allow(unused, dead_code)] // TODO
 
@@ -27,7 +28,7 @@ mod sgbr {
 }
 
 //TODO 4096 maybe
-const PAGE_SIZE: usize = 64;
+const PAGE_SIZE: usize = 128;
 const PAGES: usize = 1024;
 type Elem = u32;
 
@@ -330,6 +331,17 @@ impl Store {
         self.grab_mut(next).unwrap().use_idx(next.2);
         next
     })}
+    fn buffer(&mut self, vals: &[Elem])-> Index{
+        if vals.len() < 2 {
+            self.pair(*vals.first().unwrap_or(&0), 0)
+        } else {
+            let mut vals = vals.iter().rev().copied();
+            let cdr = vals.next().unwrap();
+            let mut ix = self.pair(vals.next().unwrap(), cdr);
+            for i in vals { ix = self.cons(i, ix).unwrap()}
+            ix
+        }
+    }
     // fn empty(&self, mut ix: Index)-> Option<bool> {
     //     loop {
     //         if self.car(ix)? != 0 {
@@ -524,10 +536,11 @@ mod tests {
         // eprintln!("{:?}",store);
         // eprintln!("{:?}",Elems(&store));
         {
-            let mut l = store.pair(18,19);
-            for i in (1..=17).rev() {
-                l = store.cons(i,l).unwrap()
-            }
+            // let mut l = store.pair(18,19);
+            // for i in (1..=17).rev() {
+            //     l = store.cons(i,l).unwrap()
+            // }
+            let l = store.buffer(&(1..=19).collect::<Vec<u32>>());
             eprintln!("l = {:?}",Listerator(store.get_iter(l)));
         }
         println!("{:?}",store);
@@ -541,9 +554,13 @@ mod tests {
 //   + memory consumption of intercepting a list in the middle
 
 mod nock {
-    use crate::print::Listerator;
+    use itertools::Itertools; // 0.9.0
+    use ::slice_of_array::prelude::*;
+
+    use crate::{Elems, print::Listerator};
     use std::{mem, iter::FromIterator, collections::VecDeque};
     use crate::{Elem, Store, Index};
+
     type Axis = u32;
     type Offset = usize;
 
@@ -557,6 +574,23 @@ mod nock {
         Pin = 8, Run(Axis) = 9,              // 8 9
         Hint = 10, Thin = 7,                 // a 7
         Scry = 11,                           // b
+    }
+
+    impl Op {
+        fn arg(self)-> Option<Elem> { Some({
+            use Op::*;
+            match self {
+                Get(x) | Run(x) | Lit(x) => x,
+                If(x) | Fwd(x) => x as Elem,
+                _ => None?
+            }
+        })}
+
+        fn enc(&self)-> [Elem; 2] {
+            [ std::intrinsics::discriminant_value(self) as Elem, 
+              self.arg().unwrap_or(99)
+            ]
+        }
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -586,14 +620,13 @@ mod nock {
     }
     
     //TODO wrapper around Elem that has a Drop and Clone lol
-    fn nybble(mut subj: Elem, code: &[Op]) -> Elem {
+    fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
         let code = VecDeque::from_iter(code.into_iter().copied());
         let mut retn: Vec<VecDeque<Op>> = vec![code];
         //
         const CONS: Elem = 0xcccc_cccc;
         const SNOC: Elem = 0xcccc_dddd;
         let mut stack: Vec<Elem> = vec![];
-        let heap: &mut Store = global_store();
 
         fn lose(stack: &mut Vec<Elem>, subj: Elem){
             //TODO actual lose
@@ -646,7 +679,7 @@ mod nock {
                     Op::If(ofs) => if as_bool(subj) { code.drain(..ofs); },
                     //
                     Op::Nok => {
-                        retn.push(code); code = compile(subj);
+                        retn.push(code); code = compile(heap,subj);
                         subj = stack.pop().unwrap();
                     }
                     Op::Cel => {
@@ -664,12 +697,12 @@ mod nock {
                     Op::Get(ax) => {
                         do_cons(); //TODO or navigate them properly
                         //TODO lose rest
-                        subj = cdadr(heap, subj, ax).expect("Bad axis")
+                        subj = cdadr(heap, subj, ax).expect("Axed atom")
                     }
                     Op::Run(ax) => {
                         do_cons(); //TODO or navigate them properly
-                        let call = cdadr(heap, subj, ax).expect("Bad axis"); //TODO cons
-                        retn.push(code); code = compile(call);
+                        let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons
+                        retn.push(code); code = compile(heap,call);
                     }
                     Op::Hint => {
                         do_cons();
@@ -695,7 +728,6 @@ mod nock {
         return subj;
     }
     
-    fn global_store()-> &'static mut Store { Box::leak(Box::new(Store::new())) } //TODO reuse
     fn is_cell(e: Elem)-> bool { match e.into() { Noun::Cel(_) => true, _ => false } }
     fn is_atom(e: Elem)-> bool { !is_cell(e) }
 
@@ -706,7 +738,20 @@ mod nock {
     }
     fn loobean(b: bool)-> Elem { if b { 0 } else { 1 } }
 
-    fn compile(e: Elem) -> VecDeque<Op> { unimplemented!(); VecDeque::new() }
+    fn compile(heap: &Store, e: Elem) -> VecDeque<Op> { 
+        let ix = if let Noun::Ind(ix) = e.into() {ix} else {panic!("Expected bytecode {:?}", Noun::from(e))};
+        heap.get_iter(ix).tuples().map(|(op, arg): (Elem, Elem)| -> Op {
+            use Op::*;
+            match op {
+                2 => Nok, 3 => Cel, 4 => Inc, 5 => Eql,
+                7 => Thin, 8 => Pin, 10 => Hint,
+                11 => Scry, 12 => Cons, 13 => Dup, 14 => Exch,
+                6 => If(arg as usize), 15 => Fwd(arg as usize),
+                0 => Get(arg), 1 => Lit(arg), 9 => Run(arg),
+                _ => panic!("Op out of range")
+            }
+        }).collect()
+    }
     fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
     fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
         assert!(ax != 0);
@@ -714,6 +759,7 @@ mod nock {
         let mut a = Noun::from(e);
         for bit in (0..32usize).into_iter().rev()
                          .skip_while(|bit| 0 == ax & 1<<bit).skip(1) {
+            dbg!(&a, ax, bit, ax & 1<<bit);
             if let Noun::Cel(idx) = a {
                 if 0 == ax & 1<<bit {
                     a = mem.car(idx)?.into()
@@ -731,10 +777,37 @@ mod nock {
     }
     fn encode(a: Result<Index,Elem>) -> Elem { unimplemented!()}
 
+    fn heap() -> &'static mut Store {Box::leak(Box::new(Store::new()))}
     #[test]
     fn dup_inc(){
         use Op::*;
-        println!("{:?}", Noun::from(nybble(1, &[Dup, Inc, Cons, Dup, Lit(0), Pin])));
+        assert_eq!(Noun::Cel(Index(0,0,1)), Noun::from(
+            nybble(heap(), 1, &[Dup, Inc, Cons])
+        ));
+    }
+
+    #[test]
+    fn three(){
+        use Op::*;
+        let store = heap();
+        assert_eq!(Noun::Cel(Index(1,0,0)),
+            Noun::from(nybble(store, 1, &[Dup, Inc, Cons, Dup, Lit(0), Pin]))
+        );
+        // println!("{:?}",Elems(&store));
+    }
+
+    #[test]
+    #[should_panic(expected = "Axed atom")]
+    fn axe_atom(){
+        use Op::*;
+        nybble(heap(), 1, &[Get(123)]);
+    }
+
+    #[test]
+    fn axe(){
+        use Op::*;
+        assert_eq!(Noun::Dir(1), Noun::from(nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)])));
+        assert_eq!(Noun::Dir(2), Noun::from(nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)])));
     }
 
     #[test]
@@ -744,6 +817,47 @@ mod nock {
         let ix = Index(1,2,3);
         assert_eq!(Noun::Cel(ix), From::<Elem>::from(Noun::Cel(ix).into()));
         assert_eq!(Noun::Ind(ix), From::<Elem>::from(Noun::Ind(ix).into()));
+    }
+
+    #[test]
+    fn decode(){
+        use std::intrinsics::discriminant_value;
+        fn tag(o: Op)-> Elem {discriminant_value(&o) as Elem}
+        let store = heap();
+
+        let code = &[
+            0,100, 1,101, 2,99, 3,99, 4,99, 5,99, 6,106, 7,99,
+            8,99, 9,109, 10,99, 11,99, 12,99, 13,99, 14,99, 15,115
+        ];
+        let atom = store.buffer(code);
+        println!("{:?}", Listerator(store.get_iter(atom)));
+        let ops = compile(store, Noun::Ind(atom).into());
+        println!("{:?}", ops);
+        assert_eq!(ops.len() * 2, code.len());
+        for (i,op) in ops.iter().enumerate() {
+            assert_eq!(i, discriminant_value(op) as usize);
+            assert_eq!(code[2*i+1], op.arg().unwrap_or(99));
+        }
+    }
+
+    fn program<'a, B: Copy + IntoIterator<Item=&'a Op>>(a: &mut Store, b: B) -> Elem {
+        Noun::Ind(
+            a.buffer(&b.into_iter().map(|x|x.enc()).collect::<Vec<_>>().flat())
+        ).into()
+    }
+    #[test]
+    fn exec(){
+        use Op::*;
+        let store = heap();
+        // println!("{:?}",Elems(&store));
+        let prog = program(store,&[Dup, Lit(1), Inc, Inc, Inc, Pin]);
+        // println!("{:?}", Listerator(store.get_iter(match prog.into() { Noun::Ind(x) => x, _=> panic!()})));
+        let output = nybble(store, prog, &[Run(1)]).into();
+        if let Noun::Cel(ix) = output {
+            assert_eq!(vec![4, prog], store.get_iter(ix).collect::<Vec<_>>());
+        } else {
+            panic!("Expected cell: {:?}", output)
+        }
     }
 }
 
