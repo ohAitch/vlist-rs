@@ -31,7 +31,7 @@ const PAGE_SIZE: usize = 64;
 const PAGES: usize = 1024;
 type Elem = u32;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Index(u16,u8,u8);
 impl Index {
     fn of(a:usize, b:usize, c:usize)-> Self { Self(a.try_into().unwrap(), b.try_into().unwrap(), c.try_into().unwrap())}
@@ -559,7 +559,7 @@ mod nock {
         Scry = 11,                           // b
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq)]
     enum Noun {
         Dir(u32),
         Ind(Index),
@@ -579,8 +579,8 @@ mod nock {
         fn into(self)-> Elem {
             match self {
                 Noun::Dir(a) => a,
-                Noun::Ind(i) => 0xa000_0000u32 | Into::<u32>::into(i),
-                Noun::Cel(i) => 0x8000_0000u32 | Into::<u32>::into(i),
+                Noun::Ind(i) => 0x3u32 << 30 | Into::<u32>::into(i),
+                Noun::Cel(i) => 0x2u32 << 30 | Into::<u32>::into(i),
             }
         }
     }
@@ -735,6 +735,15 @@ mod nock {
     fn dup_inc(){
         use Op::*;
         println!("{:?}", Noun::from(nybble(1, &[Dup, Inc, Cons, Dup, Lit(0), Pin])));
+    }
+
+    #[test]
+    fn noun_enc(){
+        assert_eq!(Noun::Dir(10), 10.into());
+        assert_eq!(10u32, Noun::Dir(10).into());
+        let ix = Index(1,2,3);
+        assert_eq!(Noun::Cel(ix), From::<Elem>::from(Noun::Cel(ix).into()));
+        assert_eq!(Noun::Ind(ix), From::<Elem>::from(Noun::Ind(ix).into()));
     }
 }
 
