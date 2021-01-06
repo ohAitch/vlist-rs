@@ -2,6 +2,9 @@
 #![feature(const_in_array_repeat_expressions)]
 #![feature(array_map)]
 #![feature(untagged_unions,min_const_generics)]
+#![feature(arbitrary_enum_discriminant)]
+
+#![allow(unused, dead_code)] // TODO
 
 use std::convert::{TryInto,TryFrom};
 use std::mem;
@@ -209,6 +212,16 @@ impl Store {
         // eprintln!("{} gain {:?}",page, self.rc[page as usize]);
         idx
     }
+    // fn lose(&mut self, mut idx: Index) {
+    //     loop {
+    //         let Index(page, list, _item) = idx;
+    //         self.rc[page as usize][list as usize] -= 1;
+    //         if self.rc[page as usize][list as usize] > 0 { break; }
+    //         //TODO fix used
+    //         if let Some(Ok(idx)) = self.cdr(idx){} else { break; }
+    //         //TODO free pages ever?
+    //     }
+    // }
     const fn new()-> Self {
         // let mut self_ =
         const W: usize = PAGE_SIZE/mem::size_of::<Pair>();
@@ -292,7 +305,7 @@ impl Store {
         let n = self.alloc(PageType::Pair);
         self[n] = cdr;
         self[n+1] = car;
-        n+1
+        self.gain(n+1)
     }
     fn cons(&mut self, car: Elem, ix: Index)-> Option<Index>{ Some({
         // #[derive(Debug)] struct Cons(Elem,Index); eprint!("{:?} ",Cons(car,ix));
@@ -521,3 +534,213 @@ mod tests {
         println!("{:?}",Elems(&store));
     }
 }
+
+// TODO
+// - free
+// - property-test allocating and reading various nouns
+//   + memory consumption of intercepting a list in the middle
+
+mod nock {
+    use crate::print::Listerator;
+    use std::{mem, iter::FromIterator, collections::VecDeque};
+    use crate::{Elem, Store, Index};
+    type Axis = u32;
+    type Offset = usize;
+
+    #[derive(Copy, Clone, Debug)]
+    #[repr(u8)]
+    enum Op {
+        Dup = 13, Exch = 14, Cons = 12,      // d e c
+        If(Offset) = 6, Fwd(Offset) = 15,    // 6 f
+        Nok = 2, Cel = 3, Inc = 4, Eql = 5,  // 2 3 4 5
+        Get(Axis) = 0, Lit(Elem) = 1,        // 0 1
+        Pin = 8, Run(Axis) = 9,              // 8 9
+        Hint = 10, Thin = 7,                 // a 7
+        Scry = 11,                           // b
+    }
+
+    #[derive(Debug)]
+    enum Noun {
+        Dir(u32),
+        Ind(Index),
+        Cel(Index),
+    }
+
+    impl From<Elem> for Noun {
+        fn from(e: Elem)-> Noun {
+            match e >> 30 {
+                2 => Noun::Cel((e & 0x3fff_ffff).into()),
+                3 => Noun::Ind((e & 0x3fff_ffff).into()),
+                _ => Noun::Dir(e),
+            }
+        }
+    }
+    impl Into<Elem> for Noun {
+        fn into(self)-> Elem {
+            match self {
+                Noun::Dir(a) => a,
+                Noun::Ind(i) => 0xa000_0000u32 | Into::<u32>::into(i),
+                Noun::Cel(i) => 0x8000_0000u32 | Into::<u32>::into(i),
+            }
+        }
+    }
+    
+    //TODO wrapper around Elem that has a Drop and Clone lol
+    fn nybble(mut subj: Elem, code: &[Op]) -> Elem {
+        let code = VecDeque::from_iter(code.into_iter().copied());
+        let mut retn: Vec<VecDeque<Op>> = vec![code];
+        //
+        const CONS: Elem = 0xcccc_cccc;
+        const SNOC: Elem = 0xcccc_dddd;
+        let mut stack: Vec<Elem> = vec![];
+        let heap: &mut Store = global_store();
+
+        fn lose(stack: &mut Vec<Elem>, subj: Elem){
+            //TODO actual lose
+            if ![CONS,SNOC].contains(&subj) { return }
+            let mut deep = 1u32;
+            while deep > 0 {
+                if ![CONS,SNOC].contains(&stack.pop().expect("Cons-free underflow")) {
+                    deep += 1
+                }
+                else { deep -= 1; }
+            }
+        }
+        fn reify_cons(heap: &mut Store, stack: &mut Vec<Elem>, subj: &mut Elem){
+            if ![CONS,SNOC].contains(subj) { return }
+            // println!("CONS/SNOC {:?}", Listerator(stack.iter().rev().take(2)));
+            let op = *subj; *subj = stack.pop().unwrap();
+            reify_cons(heap, stack, subj); //head
+            let pop = *subj; *subj = stack.pop().expect("Cons underflow");
+            reify_cons(heap, stack, subj);
+            let (car, cdr) = match op {
+                CONS => (pop, *subj),
+                SNOC => (*subj, pop),
+                _ => panic!()
+            };
+            let cel = match cdr.into() {
+                Noun::Cel(ix) => heap.cons(car,ix).expect("Bad index"),
+                _ => heap.pair(car, cdr),
+            };
+            // println!("pop={} subj={}, car={} cdr={} -> cel={:?} {}", pop, subj, car, cdr, cel, Into::<Elem>::into(Noun::Cel(cel)));
+            *subj = Noun::Cel(cel).into()
+        }
+        while let Some(mut code) = retn.pop(){
+            while let Some(inst) = code.pop_front() {
+                if false {println!("{:?} {:?} {:?}",
+                    inst,
+                    Listerator(stack.iter().map(|x| Noun::from(*x))),
+                    Noun::from(subj)
+                );}
+                let mut do_cons = || { reify_cons(heap, &mut stack, &mut subj) };
+                match inst {
+                    Op::Dup => { do_cons(); stack.push(subj) },
+                    Op::Exch => {
+                        do_cons(); //TODO C 1 C 2 3
+                        mem::swap(&mut subj, stack.last_mut().unwrap())
+                    },
+                    Op::Pin => { stack.push(subj); subj = CONS },
+                    Op::Cons => { stack.push(subj); subj = SNOC },
+                    //
+                    Op::Fwd(ofs) => {code.drain(..ofs);},
+                    Op::If(ofs) => if as_bool(subj) { code.drain(..ofs); },
+                    //
+                    Op::Nok => {
+                        retn.push(code); code = compile(subj);
+                        subj = stack.pop().unwrap();
+                    }
+                    Op::Cel => {
+                        lose(&mut stack, subj); //TODO drop shenanigans
+                        subj = loobean(is_cell(subj) || subj == CONS || subj == SNOC)
+                    },
+                    Op::Inc => { assert!(is_atom(subj)); subj += 1 }, //TODO indirect
+                    Op::Eql => {
+                        do_cons();
+                        let to = stack.pop().unwrap();
+                        reify_cons(heap, &mut stack, &mut subj);
+                        subj = loobean(subj == to || unify(subj,to)) //TODO lose
+                    }
+                    Op::Lit(e) => { lose(&mut stack, subj); subj = e}
+                    Op::Get(ax) => {
+                        do_cons(); //TODO or navigate them properly
+                        //TODO lose rest
+                        subj = cdadr(heap, subj, ax).expect("Bad axis")
+                    }
+                    Op::Run(ax) => {
+                        do_cons(); //TODO or navigate them properly
+                        let call = cdadr(heap, subj, ax).expect("Bad axis"); //TODO cons
+                        retn.push(code); code = compile(call);
+                    }
+                    Op::Hint => {
+                        do_cons();
+                        println!("hint: {:?}", Noun::from(subj));
+                        subj = stack.pop().unwrap() //TODO
+                    }
+                    Op::Thin => {}
+                    Op::Scry => {panic!("No scry handler")}
+                }
+            }
+        }
+        reify_cons(heap, &mut stack, &mut subj);
+        assert!(stack.is_empty(), "Left items on stack: {:?} {:?}", 
+            Listerator(stack.iter().map(|x| Noun::from(*x))),
+            Noun::from(subj)
+        );
+        match subj.into() {
+            Noun::Dir(x) => println!("{}", x),
+            Noun::Cel(ix) | Noun::Ind(ix) => {
+                println!("{:?}", Listerator(heap.get_iter(ix)))
+            }
+        }
+        return subj;
+    }
+    
+    fn global_store()-> &'static mut Store { Box::leak(Box::new(Store::new())) } //TODO reuse
+    fn is_cell(e: Elem)-> bool { match e.into() { Noun::Cel(_) => true, _ => false } }
+    fn is_atom(e: Elem)-> bool { !is_cell(e) }
+
+    fn as_bool(e: Elem)-> bool { 
+        assert!(is_atom(e));
+        assert!(e <= 1);
+        return (e == 0)
+    }
+    fn loobean(b: bool)-> Elem { if b { 0 } else { 1 } }
+
+    fn compile(e: Elem) -> VecDeque<Op> { unimplemented!(); VecDeque::new() }
+    fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
+    fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
+        assert!(ax != 0);
+        //TODO indirect
+        let mut a = Noun::from(e);
+        for bit in (0..32usize).into_iter().rev()
+                         .skip_while(|bit| 0 == ax & 1<<bit).skip(1) {
+            if let Noun::Cel(idx) = a {
+                if 0 == ax & 1<<bit {
+                    a = mem.car(idx)?.into()
+                } else {
+                    let idx = mem.cdr(idx)?.ok()?;
+                    if let Some(Err(n)) = mem.cdr(idx) { // fixup last-atom ambiguity
+                        a = Noun::Dir(n)
+                    } else {
+                        a = Noun::Cel(idx)
+                    }
+                } 
+            } else { None? }
+        }
+        return Some(a.into());
+    }
+    fn encode(a: Result<Index,Elem>) -> Elem { unimplemented!()}
+
+    #[test]
+    fn dup_inc(){
+        use Op::*;
+        println!("{:?}", Noun::from(nybble(1, &[Dup, Inc, Cons, Dup, Lit(0), Pin])));
+    }
+}
+
+//   [ 1 . [ 2 . 3 ] ]
+// 0 0 1 0 0 2 0 3 S S
+//   0 0 1 0 0 2 2 3 S
+//         1 1 1 1 2 3
+//                 1 2
+//                   1
