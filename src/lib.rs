@@ -21,7 +21,7 @@ mod sgbr {
     impl<F: Fn()> Drop for Sgbr<F> { fn drop(&mut self){
         if std::thread::panicking() { self.0() }
     } }
-    
+
     macro_rules! sgbr {
         ($($data:tt)*) => { let _raii = $crate::sgbr::Sgbr(|| {eprintln!($($data)*);});};
     }
@@ -38,7 +38,7 @@ impl Index {
     fn of(a:usize, b:usize, c:usize)-> Self { Self(a.try_into().unwrap(), b.try_into().unwrap(), c.try_into().unwrap())}
     fn of32(a:u32, b:u32, c:u32)-> Self { Self(a.try_into().unwrap(), b.try_into().unwrap(), c.try_into().unwrap())}
 }
-impl std::ops::Add<u8> for Index { 
+impl std::ops::Add<u8> for Index {
     type Output = Self; fn add(self, ofs: u8)-> Self { let mut s = self; s.2 += ofs; s }
 }
 impl std::ops::Sub<u8> for Index {
@@ -72,7 +72,7 @@ impl<T: Copy> List_<[T]>{
     }
 }
 
-trait Meta { 
+trait Meta {
     fn len(&self)-> u8; fn list(&self)-> Option<&List_<[Elem]>>;
     fn fits(&self, ix: Index)-> bool {(0..self.len()).contains(&ix.2)}
     fn used(&self)-> u8 {if let Some(l) = self.list() {l.used} else {self.len()}}
@@ -89,8 +89,8 @@ impl<const N: usize> Meta for List<N> {
     fn list(&self)->Option<&List_<[Elem]>> { Some(self) }
 }
 
-trait Data { 
-    fn data(&self)-> &[Elem]; 
+trait Data {
+    fn data(&self)-> &[Elem];
     fn get_elem(&self, ix: Index)-> &Elem { &self.data()[ix.2 as usize]}
 }
 impl Data for Pair { fn data(&self)->&[Elem] { &self.0 } }
@@ -312,7 +312,7 @@ impl Store {
         // #[derive(Debug)] struct Cons(Elem,Index); eprint!("{:?} ",Cons(car,ix));
         let cdr = self.grab(ix)?;
         let next: Index = {
-            if ix.2 < u8::MAX && cdr.fits(ix+1) && 
+            if ix.2 < u8::MAX && cdr.fits(ix+1) &&
                     (!cdr.is_used(ix+1) || *cdr.get_elem(ix+1) == car) {
                 self.gain(ix+1)
             } else if ix.2 == 0 && cdr.tag() == PageType::Pair {
@@ -357,22 +357,22 @@ impl Store {
         let p = page as usize;
         std::iter::empty()
         .chain((
-            match self.types[p]? { 
+            match self.types[p]? {
                 PageType::Pair => unsafe {&self.pages.pairs[p][..]}, _ => &[]
             }).iter().map(|x|->&dyn Container {x}))
         .chain((
-            match self.types[p]? { 
+            match self.types[p]? {
                 PageType::List2 => unsafe {&self.pages.list2[p][..]}, _ => &[]
             }).iter().map(|x|->&dyn Container {x}))
         .chain((
-            match self.types[p]? { 
+            match self.types[p]? {
                 PageType::List6 => unsafe {&self.pages.list6[p][..]}, _ => &[]
             }).iter().map(|x|->&dyn Container {x}))
         .chain((
-            match self.types[p]? { 
+            match self.types[p]? {
                 PageType::List14 => unsafe {&self.pages.list14[p][..]}, _ => &[]
             }).iter().map(|x|->&dyn Container {x}))
-        // 
+        //
         //     PageType::List2 => unsafe {&self.pages.list2[page as usize].iter().map(|x|->&dyn Container {x})},
         //     PageType::List6 => unsafe {&self.pages.list6[page as usize].iter().map(|x|->&dyn Container {x})},
         // }
@@ -522,11 +522,11 @@ mod tests {
         // dbg!({let l = store.pair(0,0); store.empty(l)});
         // dbg!(store.empty(Index(1,0,0)));
         dbg!(format!{"{:?}", &store.rc[0]});
-        
-        let l6 = nodbg!(store.alloc(PageType::List6)); 
+
+        let l6 = nodbg!(store.alloc(PageType::List6));
         let l6d = List::<6>{ tail: c3, used: 3, data: [4,5,6,77,0,0]};
         store.grab_mut_list(l6).unwrap().overwrite(&l6d);
-        
+
         // dbg!(store.grab(Index(0,0,0)), store.grab(Index(0,4,0)), store.grab(Index(1,0,2)));
         // dbg!(size(store.types));
         // dbg!(mem::size_of::<Index>());
@@ -587,7 +587,7 @@ mod nock {
         })}
 
         fn enc(&self)-> [Elem; 2] {
-            [ std::intrinsics::discriminant_value(self) as Elem, 
+            [ std::intrinsics::discriminant_value(self) as Elem,
               self.arg().unwrap_or(99)
             ]
         }
@@ -618,7 +618,7 @@ mod nock {
             }
         }
     }
-    
+
     //TODO wrapper around Elem that has a Drop and Clone lol
     fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
         let code = VecDeque::from_iter(code.into_iter().copied());
@@ -715,7 +715,7 @@ mod nock {
             }
         }
         reify_cons(heap, &mut stack, &mut subj);
-        assert!(stack.is_empty(), "Left items on stack: {:?} {:?}", 
+        assert!(stack.is_empty(), "Left items on stack: {:?} {:?}",
             Listerator(stack.iter().map(|x| Noun::from(*x))),
             Noun::from(subj)
         );
@@ -727,18 +727,18 @@ mod nock {
         }
         return subj;
     }
-    
+
     fn is_cell(e: Elem)-> bool { match e.into() { Noun::Cel(_) => true, _ => false } }
     fn is_atom(e: Elem)-> bool { !is_cell(e) }
 
-    fn as_bool(e: Elem)-> bool { 
+    fn as_bool(e: Elem)-> bool {
         assert!(is_atom(e));
         assert!(e <= 1);
         return (e == 0)
     }
     fn loobean(b: bool)-> Elem { if b { 0 } else { 1 } }
 
-    fn compile(heap: &Store, e: Elem) -> VecDeque<Op> { 
+    fn compile(heap: &Store, e: Elem) -> VecDeque<Op> {
         let ix = if let Noun::Ind(ix) = e.into() {ix} else {panic!("Expected bytecode {:?}", Noun::from(e))};
         heap.get_iter(ix).tuples().map(|(op, arg): (Elem, Elem)| -> Op {
             use Op::*;
@@ -770,7 +770,7 @@ mod nock {
                     } else {
                         a = Noun::Cel(idx)
                     }
-                } 
+                }
             } else { None? }
         }
         return Some(a.into());
