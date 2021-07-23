@@ -1,7 +1,7 @@
 #![feature(const_panic)]
-#![feature(const_in_array_repeat_expressions)]
+#![allow(incomplete_features)] #![feature(inline_const)]
 #![feature(array_map)]
-#![feature(untagged_unions,min_const_generics)]
+#![feature(untagged_unions)]
 #![feature(arbitrary_enum_discriminant)]
 #![feature(core_intrinsics)]
 
@@ -229,7 +229,7 @@ impl Store {
         const ZEROED: Pair = Pair([0,0]);
         Self {
             types: [None; PAGES],
-            pages: Pages { pairs: [[ZEROED; W]; PAGES] }, // basically mem::zeroed()
+            pages: Pages { pairs: [const{[ZEROED; W]}; PAGES] }, // basically mem::zeroed()
             rc: [[0; W]; PAGES],
             free: [true; PAGES],
             full: [false; PAGES],
