@@ -1,8 +1,6 @@
 #![feature(const_panic)]
 #![allow(incomplete_features)] #![feature(inline_const)]
-#![feature(array_map)]
 #![feature(untagged_unions)]
-#![feature(arbitrary_enum_discriminant)]
 #![feature(core_intrinsics)]
 
 #![allow(unused, dead_code)] // TODO
@@ -440,7 +438,7 @@ impl Iterator for IndexIterator<'_> {
 }
 
 #[derive(Debug)]
-struct DebugRow<'a, T: Debug + Sized>{
+struct Row<'a, T: Debug + Sized>{
     ty: PageType,
     rc: &'a [u16],
     x: T,
@@ -452,7 +450,7 @@ impl Debug for Store {
             self.non_free_pages().map(|i|{
                 let page = self.grab_page(i as u16).unwrap();
                 let page = page.enumerate().filter(move |(j,_)| self.rc[i][*j] != 0);
-                (i, print::Lined(DebugRow {
+                (i, print::Lined(Row {
                     ty: self.types[i].unwrap(),
                     rc: &self.rc[i],
                     x: print::Maperator(page)
