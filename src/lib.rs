@@ -5,6 +5,10 @@
 
 #![allow(unused, dead_code)] // TODO
 
+#![allow(clippy::from_over_into)]
+#![allow(clippy::unit_arg)]
+#![allow(clippy::precedence)] // :)
+
 use std::convert::{TryInto,TryFrom};
 use std::mem;
 
