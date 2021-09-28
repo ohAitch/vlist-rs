@@ -376,7 +376,7 @@ impl Store {
         // }
     })}
     fn get_iter(&self, i: Index) -> impl Iterator<Item=Elem> + Clone + '_ {
-        IndexIterator {store: &self, idx:Some(i)}
+        IndexIterator {store: self, idx:Some(i)}
     }
     fn non_free_pages(&self) -> impl Iterator<Item=usize> + Clone + '_ {
         self.free.iter().enumerate().filter(|(_,&x)| !x).map(|(i,_)|i)
@@ -412,7 +412,7 @@ mod print {
     impl<T: Debug> Debug for Lined<T> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             self.0.fmt(f)?;
-            write!(f,"\n")
+            writeln!(f)
         }
     }
     impl<T: Clone> Clone for Lined<T> {fn clone(&self) -> Self { Self(self.0.clone())}}
@@ -619,7 +619,7 @@ mod nock {
 
     //TODO wrapper around Elem that has a Drop and Clone lol
     fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
-        let code = VecDeque::from_iter(code.into_iter().copied());
+        let code = VecDeque::from_iter(code.iter().copied());
         let mut retn: Vec<VecDeque<Op>> = vec![code];
         //
         const CONS: Elem = 0xcccc_cccc;
@@ -695,11 +695,11 @@ mod nock {
                     Op::Get(ax) => {
                         do_cons(); //TODO or navigate them properly
                         //TODO lose rest
-                        subj = cdadr(heap, subj, ax).expect("Axed atom")
+                        subj = axe(heap, subj, ax).expect("Axed atom")
                     }
                     Op::Run(ax) => {
                         do_cons(); //TODO or navigate them properly
-                        let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons
+                        let call = axe(heap, subj, ax).expect("Axed atom"); //TODO cons
                         retn.push(code); code = compile(heap,call);
                     }
                     Op::Hint => {
@@ -723,16 +723,16 @@ mod nock {
                 println!("{:?}", Listerator(heap.get_iter(ix)))
             }
         }
-        return subj;
+        subj
     }
 
-    fn is_cell(e: Elem)-> bool { match e.into() { Noun::Cel(_) => true, _ => false } }
+    fn is_cell(e: Elem)-> bool { matches!(e.into(), Noun::Cel(_)) }
     fn is_atom(e: Elem)-> bool { !is_cell(e) }
 
     fn as_bool(e: Elem)-> bool {
         assert!(is_atom(e));
         assert!(e <= 1);
-        return (e == 0)
+        (e == 0)
     }
     fn loobean(b: bool)-> Elem { if b { 0 } else { 1 } }
 
@@ -751,7 +751,7 @@ mod nock {
         }).collect()
     }
     fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
-    fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
+    fn axe(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
         assert!(ax != 0);
         //TODO indirect
         let mut a = Noun::from(e);
@@ -771,7 +771,7 @@ mod nock {
                 }
             } else { None? }
         }
-        return Some(a.into());
+        Some(a.into())
     }
     fn encode(a: Result<Index,Elem>) -> Elem { unimplemented!()}
 
@@ -840,7 +840,7 @@ mod nock {
 
     fn program<'a, B: Copy + IntoIterator<Item=&'a Op>>(a: &mut Store, b: B) -> Elem {
         Noun::Ind(
-            a.buffer(&b.into_iter().map(|x|x.enc()).collect::<Vec<_>>().flat())
+            a.buffer(b.into_iter().map(|x|x.enc()).collect::<Vec<_>>().flat())
         ).into()
     }
     #[test]
