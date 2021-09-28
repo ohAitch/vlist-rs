@@ -72,17 +72,41 @@ impl From<Elem> for Index {
   }
 }
 
-//NOTE not strictly speaking cloneable, ideally this would be a sealed bit-clone
-// trait that was only used by the allocator
-#[derive(Clone,Default, Debug)]
+trait StoreCloneable {
+  fn duplicate(&self) -> Self;
+}
+
+#[derive(Default, Debug)]
 struct Pair([Elem; 2]);
+
+impl StoreCloneable for Pair {
+  fn duplicate(&self) -> Self {
+    Pair([self.0[0], self.0[1]])
+  }
+}
+
+
 type List<const LEN: usize> = List_<[Elem; LEN]>;
-#[derive(Clone, Debug)]
+
+
+#[derive(Debug)]
 struct List_<T: ?Sized>{ //NOTE secretly, LEN: u8
     tail: Index,
     used: u8,
     data: T,
 }
+
+impl<T: Copy> StoreCloneable for List_<T> {
+  fn duplicate(&self) -> Self {
+    Self {
+      tail: self.tail,
+      used: self.used,
+      data: self.data,
+    }
+  }
+}
+
+
 impl<T: Copy> List_<[T]>{
     fn overwrite<const LEN: usize>(&mut self, other: &List_<[T; LEN]>){
         assert!(self.data.len() == other.data.len());
@@ -293,8 +317,8 @@ impl Store {
       })
     }
     fn copy(&mut self, from: Index, to: Index){
-        fn do_copy<const N: usize>(arr: &mut [[impl Clone; N]], from: Index, to: Index){
-            arr[to.0 as usize][to.1 as usize] = arr[from.0 as usize][from.1 as usize].clone()
+        fn do_copy<const N: usize>(arr: &mut [[impl StoreCloneable; N]], from: Index, to: Index){
+            arr[to.0 as usize][to.1 as usize] = arr[from.0 as usize][from.1 as usize].duplicate()
         }
         assert!(self.types[from.0 as usize] == self.types[to.0 as usize]);
         //SAFETY: as long as the types don't lie
