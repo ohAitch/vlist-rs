@@ -43,18 +43,34 @@ impl Index {
     fn of32(a:u32, b:u32, c:u32)-> Self { Self(a.try_into().unwrap(), b.try_into().unwrap(), c.try_into().unwrap())}
 }
 impl std::ops::Add<u8> for Index {
-    type Output = Self; fn add(self, ofs: u8)-> Self { let mut s = self; s.2 += ofs; s }
+    type Output = Self; fn add(self, ofs: u8)-> Self {
+      Self(self.0, self.1, self.2 + ofs)
+    }
 }
+
 impl std::ops::Sub<u8> for Index {
-    type Output = Self; fn sub(self, ofs: u8)-> Self { let mut s = self; s.2 -= ofs; s }
+    type Output = Self; fn sub(self, ofs: u8)-> Self {
+      Self(self.0, self.1, self.2 - ofs)
+    }
 }
+
 impl Debug for Index {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f,"{}-{}-{}", self.0, self.1, self.2)
     }
 }
-impl Into<Elem> for Index { fn into(self) -> Elem { (self.0 as u32)*0x1_0000 ^ (self.1 as u32)*0x100 ^ (self.2 as u32) } }
-impl From<Elem> for Index { fn from(e: Elem) -> Self { Self::of32(e>>16, e>>8 & 0xff, e&0xff) } }
+
+impl Into<Elem> for Index {
+  fn into(self) -> Elem {
+    (self.0 as u32)*0x1_0000 ^ (self.1 as u32)*0x100 ^ (self.2 as u32)
+  }
+}
+
+impl From<Elem> for Index {
+  fn from(e: Elem) -> Self {
+    Self::of32(e>>16, e>>8 & 0xff, e&0xff)
+  }
+}
 
 //NOTE not strictly speaking cloneable, ideally this would be a sealed bit-clone
 // trait that was only used by the allocator
