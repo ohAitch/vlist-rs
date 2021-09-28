@@ -340,4 +340,18 @@ mod test {
             panic!("Expected cell: {:?}", output)
         }
     }
+
+    #[test]
+    fn decrement(){
+        use Op::*;
+        let store = heap();
+        let prog = program(store,&[
+            Dup,
+              Dup, Get(2), Inc, Exch, Get(7), Eql,
+            If(2), Get(2),
+            Fwd(7),
+              Dup, Get(2), Inc, Exch, Get(3), Cons, Run(6)
+        ]);
+        assert_eq!(9, nybble(store, 10, &[Dup, Lit(prog), Pin, Dup, Lit(0), Pin, Run(6)]));
+    }
 }
