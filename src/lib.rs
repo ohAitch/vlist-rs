@@ -531,15 +531,49 @@ impl Debug for Elems<'_> {
 mod tests {
     use crate::*;
     use print::Listerator;
+    use matches::assert_matches;
 
     macro_rules! nodbg { ($e:expr)=> {$e} }
     fn _size<T>(_:T)-> usize { mem::size_of::<T>()}
+
+    // Mostly copied from the first part of main()
+    #[test]
+    fn alloc_session_1() {
+      let mut store = Box::new(Store::new());
+
+      assert_eq!(0, store.alloc_page(PageType::Pair));
+      assert_eq!(1, store.alloc_page(PageType::List2));
+      let pair_idx = Index(0, 0, 1);
+      assert_eq!(pair_idx, store.pair(2, 1));
+
+      assert_eq!(Some(2), store.car(pair_idx));
+      assert_eq!(Some(Ok(Index(0, 0, 0))), store.cdr(pair_idx));
+
+      let zero_idx = Index(0, 0, 0);
+      assert_eq!(None, store.car(zero_idx));
+      assert_eq!(Some(Err(1)), store.cdr(zero_idx));
+
+      for _ in 1..10 {
+        store.alloc_page(PageType::Pair);
+      }
+
+      assert_eq!(11, store.alloc_page(PageType::List2));
+      assert_eq!(Some(Index(0, 0, 1)), store.cons(2, Index(0, 0, 0)));
+
+      let pairs = unsafe { &store.pages.pairs[0][..4] };
+      assert_matches!(pairs, [
+          Pair([1, 2]),
+          Pair([0, 0]),
+          Pair([0, 0]),
+          Pair([0, 0]),
+      ]);
+    }
 
     #[test]
     fn main(){
         // dbg!(mem::size_of::<PageType>());
         let mut store = Box::new(Store::new());
-        nodbg!(store.alloc_page(PageType::Pair));
+        dbg!(store.alloc_page(PageType::Pair));
         dbg!(store.alloc_page(PageType::List2));
         dbg!(store.pair(2,1));
         if true {
