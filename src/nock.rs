@@ -104,7 +104,8 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
             Noun::Cel(ix) => heap.cons(car,ix).expect("Bad index"),
             _ => heap.pair(car, cdr),
         };
-        // println!("pop={} subj={}, car={} cdr={} -> cel={:?} {}", pop, subj, car, cdr, cel, Into::<Elem>::into(Noun::Cel(cel)));
+        // println!("pop={} subj={}, car={} cdr={} -> cel={:?} {}",
+        //          pop, subj, car, cdr, cel, Into::<Elem>::into(Noun::Cel(cel)));
         *subj = Noun::Cel(cel).into()
     }
     while let Some(mut code) = retn.pop(){
@@ -129,7 +130,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 //
                 Op::Nok => {
                     retn.push(code); code = compile(heap,subj);
-                    subj = stack.pop().unwrap();
+                    subj = stack.pop().expect("Underflow: no subject for eval");
                 }
                 Op::Cel => {
                     lose(&mut stack, subj); //TODO drop shenanigans
@@ -138,7 +139,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Op::Inc => { assert!(is_atom(subj)); subj += 1 }, //TODO indirect
                 Op::Eql => {
                     do_cons();
-                    let to = stack.pop().unwrap();
+                    let to = stack.pop().expect("Underflow: no two values to compare");
                     reify_cons(heap, &mut stack, &mut subj);
                     subj = loobean(subj == to || unify(subj,to)) //TODO lose
                 }
@@ -208,7 +209,7 @@ fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
     let mut a = Noun::from(e);
     for bit in (0..32usize).into_iter().rev()
                       .skip_while(|bit| 0 == ax & 1<<bit).skip(1) {
-        dbg!(&a, ax, bit, ax & 1<<bit);
+        // dbg!(&a, ax, bit, ax & 1<<bit);
         if let Noun::Cel(idx) = a {
             if 0 == ax & 1<<bit {
                 a = mem.car(idx)?.into()
@@ -224,11 +225,10 @@ fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
     }
     Some(a.into())
 }
-fn encode(a: Result<Index,Elem>) -> Elem { unimplemented!()}
 
 fn heap() -> &'static mut Store {Box::leak(Box::new(Store::new()))}
 
-
+#[cfg(test)]
 mod test {
     use super::*;
     #[test]
@@ -259,8 +259,8 @@ mod test {
     #[test]
     fn axe(){
         use Op::*;
-        assert_eq!(Noun::Dir(1), Noun::from(nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)])));
-        assert_eq!(Noun::Dir(2), Noun::from(nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)])));
+        assert_eq!(1, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)]));
+        assert_eq!(2, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)]));
     }
 
     #[test]
