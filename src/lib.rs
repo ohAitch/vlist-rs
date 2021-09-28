@@ -43,30 +43,70 @@ impl Index {
     fn of32(a:u32, b:u32, c:u32)-> Self { Self(a.try_into().unwrap(), b.try_into().unwrap(), c.try_into().unwrap())}
 }
 impl std::ops::Add<u8> for Index {
-    type Output = Self; fn add(self, ofs: u8)-> Self { let mut s = self; s.2 += ofs; s }
+    type Output = Self; fn add(self, ofs: u8)-> Self {
+      Self(self.0, self.1, self.2 + ofs)
+    }
 }
+
 impl std::ops::Sub<u8> for Index {
-    type Output = Self; fn sub(self, ofs: u8)-> Self { let mut s = self; s.2 -= ofs; s }
+    type Output = Self; fn sub(self, ofs: u8)-> Self {
+      Self(self.0, self.1, self.2 - ofs)
+    }
 }
+
 impl Debug for Index {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f,"{}-{}-{}", self.0, self.1, self.2)
     }
 }
-impl Into<Elem> for Index { fn into(self) -> Elem { (self.0 as u32)*0x1_0000 ^ (self.1 as u32)*0x100 ^ (self.2 as u32) } }
-impl From<Elem> for Index { fn from(e: Elem) -> Self { Self::of32(e>>16, e>>8 & 0xff, e&0xff) } }
 
-//NOTE not strictly speaking cloneable, ideally this would be a sealed bit-clone
-// trait that was only used by the allocator
-#[derive(Clone,Default, Debug)]
+impl Into<Elem> for Index {
+  fn into(self) -> Elem {
+    (self.0 as u32)*0x1_0000 ^ (self.1 as u32)*0x100 ^ (self.2 as u32)
+  }
+}
+
+impl From<Elem> for Index {
+  fn from(e: Elem) -> Self {
+    Self::of32(e>>16, e>>8 & 0xff, e&0xff)
+  }
+}
+
+trait StoreCloneable {
+  fn duplicate(&self) -> Self;
+}
+
+#[derive(Default, Debug)]
 struct Pair([Elem; 2]);
+
+impl StoreCloneable for Pair {
+  fn duplicate(&self) -> Self {
+    Pair([self.0[0], self.0[1]])
+  }
+}
+
+
 type List<const LEN: usize> = List_<[Elem; LEN]>;
-#[derive(Clone, Debug)]
+
+
+#[derive(Debug)]
 struct List_<T: ?Sized>{ //NOTE secretly, LEN: u8
     tail: Index,
     used: u8,
     data: T,
 }
+
+impl<T: Copy> StoreCloneable for List_<T> {
+  fn duplicate(&self) -> Self {
+    Self {
+      tail: self.tail,
+      used: self.used,
+      data: self.data,
+    }
+  }
+}
+
+
 impl<T: Copy> List_<[T]>{
     fn overwrite<const LEN: usize>(&mut self, other: &List_<[T; LEN]>){
         assert!(self.data.len() == other.data.len());
@@ -277,8 +317,8 @@ impl Store {
       })
     }
     fn copy(&mut self, from: Index, to: Index){
-        fn do_copy<const N: usize>(arr: &mut [[impl Clone; N]], from: Index, to: Index){
-            arr[to.0 as usize][to.1 as usize] = arr[from.0 as usize][from.1 as usize].clone()
+        fn do_copy<const N: usize>(arr: &mut [[impl StoreCloneable; N]], from: Index, to: Index){
+            arr[to.0 as usize][to.1 as usize] = arr[from.0 as usize][from.1 as usize].duplicate()
         }
         assert!(self.types[from.0 as usize] == self.types[to.0 as usize]);
         //SAFETY: as long as the types don't lie
