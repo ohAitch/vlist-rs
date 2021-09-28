@@ -699,11 +699,11 @@ mod nock {
                     Op::Get(ax) => {
                         do_cons(); //TODO or navigate them properly
                         //TODO lose rest
-                        subj = axe(heap, subj, ax).expect("Axed atom")
+                        subj = cdadr(heap, subj, ax).expect("Axed atom")
                     }
                     Op::Run(ax) => {
                         do_cons(); //TODO or navigate them properly
-                        let call = axe(heap, subj, ax).expect("Axed atom"); //TODO cons
+                        let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons
                         retn.push(code); code = compile(heap,call);
                     }
                     Op::Hint => {
@@ -755,7 +755,7 @@ mod nock {
         }).collect()
     }
     fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
-    fn axe(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
+    fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
         assert!(ax != 0);
         //TODO indirect
         let mut a = Noun::from(e);
