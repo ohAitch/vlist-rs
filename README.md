@@ -7,8 +7,7 @@ WORK IN PROGRESS!
 
 # Motivation
 
-Okay so, as per https://github.com/urbit/urbit/blob/master/doc/spec/u3.md
-every cell is stored as, effectively,
+In [the urbit memory model](https://github.com/urbit/urbit/blob/master/doc/spec/u3.md) every cell is stored as, effectively,
 
 ```c
 struct _u3a_boxed_cell {
@@ -34,17 +33,15 @@ A more flexible, but slower, scheme is to use a bitvector of type tags - even a 
 
 # The pesky cdr field
 
-Of course we are not constrained to only the type tags currently present in u3 (cell vs indirect atom). An ancient idea in the lisp world is https://en.wikipedia.org/wiki/CDR_coding
-Where you store `[A B C D]` as a linear array, despite its logical structure of `[A [B [C D]]]`
+Of course we are not constrained to only the type tags currently present in u3 (cell vs indirect atom). An ancient idea in the lisp world is [CDR Coding](https://en.wikipedia.org/wiki/CDR_coding), where you store `[A B C D]` as a linear array, despite its logical structure of `[A [B [C D]]]`
 
 One can imagine a third "long cell" type, `struct u3a_quad { u3_noun car; u3_noun cadr; u3_noun caddr; u3_noun cdddr}`, for storing tuples of 3 or 4 elements. (Aligned so that a pointer to its `cadr` is distinguishable from a pointer to is `car`, respectively.) This introduces overhead when only 3 elements are present, though not more than if you were to store them as a pair linking to a second pair - but what is "overhead"? The `use` and `mug` have been swept under the rug.  
-A simple scheme is to add a header for `use_dot; use_cdr; use_cddr; mug_dot; mug_cdr; mug_cddr`, which rolls back the space savings to only the `cdr` pointers. The three `use` can also be consolidated to a total "references anywhere inside this structure" count, at the cost of occasionally keeping whole quad-cells whose only live data is a `[caddr cdddr]` at the end.  
-As for `mug`, caching only `mug_cddr` and forbidding placing quad-cell `dot`/`cdr` pointers in another quad-cell's `car` or `cadr` positions would maintain the constant-time bound. (You can, after all, always allocate a regular cell instead.)
+A minimal answer is to add a header for `use_dot; use_cdr; use_cddr; mug_dot; mug_cdr; mug_cddr`, which rolls back the space savings to only the `cdr` pointers.  
+The three `use` can also be consolidated to a total "references anywhere inside this structure" count, at the cost of occasionally keeping whole quad-cells whose only live data is a `[caddr cdddr]` at the end. As for `mug`, caching only `mug_cddr` and forbidding placing quad-cell `dot`/`cdr` pointers in another quad-cell's `car` or `cadr` positions would maintain the constant-time bound. (You can, after all, always allocate a regular cell instead.)
 
 # Vlists
 
-This repository implements an elaboration on the "quad cell" scheme, outlined in https://cl-pdx.com/static/techlists.pdf  
-The core conceit is to store a list `~[1 2 3 4 5 6 7 8 9]` as an exponentially flatter sequence
+This repository implements an elaboration on the "quad cell" scheme, the [VList Datastructure](https://cl-pdx.com/static/techlists.pdf). The core conceit is to store a list `~[1 2 3 4 5 6 7 8 9]` as an exponentially flatter sequence
 
 ```c
 a: {(-:! +<:!) +>-:1 +>+<:2 +>+>-:3 +>+>+<:4 +>+>+>-:5 +>+>+>+<:&b}
@@ -57,9 +54,13 @@ That is, whenever you find yourself `cons`ing onto the middle of a list segment,
 ## Metadata
 
 Reference counts are kept in a per-page parallel array of `u16` (overflow scheme tbd for adversarial inputs), figuring that the locality savings for the simple case of read-only access of outer-road data(e.g. library code) outweigh the cache misses on updating them.  
-Further work could include implementing "immutable bean" counting in the bytecode compiler to further reduce reference count thrashing, see https://arxiv.org/pdf/1908.05647.pdf
+Further work could include implementing ["immutable bean" borrow-inference](https://arxiv.org/pdf/1908.05647.pdf) in the bytecode compiler to further reduce reference count thrashing.
 
 `mug` is not presently implemented, but could work in a manner similar to `rc`.
+
+## History
+
+Originally implemented as a [gist](https://gist.github.com/ohAitch/8301841ac7aa58aacf9acdac24a60e0d) which may be easier to follow.
 
 # Bytes?
 
