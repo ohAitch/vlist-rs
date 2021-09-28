@@ -272,13 +272,13 @@ mod test {
         use Op::*;
         const CRASH: Op = Get(0);
         assert_eq!(2, nybble(heap(), 0, &[Fwd(1), CRASH, Lit(2)]));
-        assert_eq!(3, nybble(heap(), 1, &[If(1), CRASH, Lit(3)]));
-        assert_eq!(44, nybble(heap(), 1, &[If(2), Lit(99), Fwd(1), Lit(44)]));
-        assert_eq!(99, nybble(heap(), 0, &[If(2), Lit(99), Fwd(1), Lit(44)]));
+        assert_eq!(3, nybble(heap(), 1, &[Dup, If(1), CRASH, Lit(3)]));
+        assert_eq!(44, nybble(heap(), 1, &[Dup, If(2), Lit(99), Fwd(1), Lit(44)]));
+        assert_eq!(99, nybble(heap(), 0, &[Dup, If(2), Lit(99), Fwd(1), Lit(44)]));
     }
 
     #[test]
-    #[should_panic(expected = "None")]
+    #[should_panic(expected = "Underflow")]
     fn if_underflow(){
         use Op::*;
         nybble(heap(), 1, &[If(0)]);
