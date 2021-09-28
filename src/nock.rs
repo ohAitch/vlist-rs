@@ -126,7 +126,11 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Op::Cons => { stack.push(subj); subj = SNOC },
                 //
                 Op::Fwd(ofs) => {code.drain(..ofs);},
-                Op::If(ofs) => if as_bool(subj) { code.drain(..ofs); },
+                Op::If(ofs) => {
+                    // some negations going on here: if subj, then execute next instruction, else skip ofs
+                    if !as_bool(subj) { code.drain(..ofs); }
+                    subj = stack.pop().expect("Underflow: no stack after if"); // bool precludes cons
+                },
                 //
                 Op::Nok => {
                     retn.push(code); code = compile(heap,subj);
@@ -261,6 +265,30 @@ mod test {
         use Op::*;
         assert_eq!(1, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)]));
         assert_eq!(2, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)]));
+    }
+
+    #[test]
+    fn if_else(){
+        use Op::*;
+        const CRASH: Op = Get(0);
+        assert_eq!(2, nybble(heap(), 0, &[Fwd(1), CRASH, Lit(2)]));
+        assert_eq!(3, nybble(heap(), 1, &[If(1), CRASH, Lit(3)]));
+        assert_eq!(44, nybble(heap(), 1, &[If(2), Lit(99), Fwd(1), Lit(44)]));
+        assert_eq!(99, nybble(heap(), 0, &[If(2), Lit(99), Fwd(1), Lit(44)]));
+    }
+
+    #[test]
+    #[should_panic(expected = "None")]
+    fn if_underflow(){
+        use Op::*;
+        nybble(heap(), 1, &[If(0)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn if_far(){
+        use Op::*;
+        nybble(heap(), 1, &[Fwd(10)]);
     }
 
     #[test]
