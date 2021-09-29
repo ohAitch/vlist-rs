@@ -472,10 +472,12 @@ struct IndexIterator<'a> {
 impl Iterator for IndexIterator<'_> {
     type Item = Elem;
     fn next(&mut self)-> Option<Elem>{
-        let a = self.store.car(self.idx?);
-        let idx = self.store.cdr(self.idx?)?;
+        let cur_idx = self.idx?;
+
+        let a = self.store.car(cur_idx);
+        let idx = self.store.cdr(cur_idx)?;
         self.idx = idx.ok();
-        match (a,idx) {
+        match (a, idx) {
             (Some(_), Ok(_))=> a,
             (None, Err(e))=> Some(e),
             _ => panic!("yo")
@@ -567,6 +569,51 @@ mod tests {
           Pair([0, 0]),
           Pair([0, 0]),
       ]);
+
+      let c3 = store.cons(3, Index(0, 0, 0)).unwrap();
+      assert_matches!(Some(Index(0, 1, 1)), c3);
+
+      let pairs = unsafe { &store.pages.pairs[0][..4] };
+      assert_matches!(pairs, [
+          Pair([1, 2]),
+          Pair([1, 3]),
+          Pair([0, 0]),
+          Pair([0, 0]),
+      ]);
+
+      let c3_elems: Vec<Elem> = store.get_iter(c3).collect();
+      assert_matches!(c3_elems.as_slice(), [3, 1]);
+
+      let c4 = store.cons(4, c3).unwrap();
+      assert_matches!(Some(Index(1, 0, 0)), c4);
+
+      let c4_elems: Vec<Elem> = store.get_iter(c4).collect();
+      assert_matches!(c4_elems.as_slice(), [4, 3, 1]);
+
+      let pairs = unsafe { &store.pages.pairs[0][..4] };
+      assert_matches!(pairs, [
+          Pair([1, 2]),
+          Pair([1, 3]),
+          Pair([0, 0]),
+          Pair([0, 0]),
+      ]);
+
+      let idx = store.alloc(PageType::Pair);
+      assert_matches!(idx, Index(0, 2, 0));
+
+      let reference_count = store.rc[0];
+      assert_matches!(reference_count, [3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn buffer_test() {
+      let mut store = Box::new(Store::new());
+
+      let buffer_idx = store.buffer(&(1..=19).collect::<Vec<u32>>());
+      let buffer_elems: Vec<Elem> = store.get_iter(buffer_idx).collect();
+      assert_matches!(buffer_elems[..],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      );
     }
 
     #[test]
