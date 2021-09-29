@@ -124,10 +124,12 @@ trait Meta {
         (0..self.used()).contains(&ix.2)
     }
 }
+
 impl Meta for Pair {
     fn len(&self)-> u8 {2}
     fn list(&self)->Option<&List_<[Elem]>> { None }
 }
+
 impl<const N: usize> Meta for List<N> {
     fn len(&self)-> u8 {N as u8}
     fn list(&self)->Option<&List_<[Elem]>> { Some(self) }
@@ -150,10 +152,11 @@ impl<const T: usize> DataMut for List<T> {
 
 trait Use { fn use_idx(&mut self, i: u8);}
 impl Use for Pair {fn use_idx(&mut self, _:u8){}}
+
 impl<const T: usize> Use for List<T>{
-    fn use_idx(&mut self, i:u8){
+    fn use_idx(&mut self, i:u8) {
         assert!(i<=self.used, "i={} self={:?}", i, self);
-        self.used=self.used.max(i+1)
+        self.used = self.used.max(i+1)
     }
 }
 
@@ -362,7 +365,7 @@ impl Store {
             } else if ix.2 == 0 && cdr.tag() == PageType::Pair {
                 // NOTE in theory shouldn't happen, you'd just use the elem
                 let n = self.alloc(PageType::Pair);
-                self.copy(ix,n);
+                self.copy(ix, n);
                 n+1
             } else {
                 let tag = cdr.tag().next();
@@ -538,6 +541,98 @@ mod tests {
     macro_rules! nodbg { ($e:expr)=> {$e} }
     fn _size<T>(_:T)-> usize { mem::size_of::<T>()}
 
+    #[test]
+    fn page_allocation_and_refcounts() {
+      let mut store = Box::new(Store::new());
+      assert_eq!(0, store.alloc_page(PageType::Pair));
+      assert_eq!(1, store.alloc_page(PageType::List2));
+      assert_eq!(2, store.alloc_page(PageType::List6));
+
+      assert_eq!(store.rc[0][0], 0);
+      let idx = store.alloc(PageType::Pair);
+      assert_matches!(idx, Index(0, 0, 0));
+      assert_eq!(store.rc[0][0], 1);
+
+      let idx = store.alloc(PageType::Pair);
+      assert_matches!(idx, Index(0, 1, 0));
+      assert_eq!(store.rc[0][0], 1);
+      assert_eq!(store.rc[0][1], 1);
+
+      let idx = store.alloc(PageType::List2);
+      assert_matches!(idx, Index(1, 0, 0));
+      assert_eq!(store.rc[1][0], 1);
+
+      let idx = store.alloc(PageType::List6);
+      assert_matches!(idx, Index(2, 0, 0));
+      assert_eq!(store.rc[2][0], 1);
+    }
+
+    #[test]
+    fn allocate_on_next_free_page_when_page_full() {
+      let mut store = Box::new(Store::new());
+      let total = PAGE_SIZE/mem::size_of::<Pair>();
+
+      let idx = store.alloc(PageType::Pair);
+      assert_matches!(idx, Index(0, 0, 0));
+
+      store.alloc_page(PageType::List6);
+
+      for n in 1..total {
+        let idx = store.alloc(PageType::Pair);
+        assert_matches!(idx, Index(0, x, 0) if x as usize == n);
+      }
+
+      let idx = store.alloc(PageType::Pair);
+      assert_matches!(idx, Index(2, 0, 0));
+    }
+
+    #[test]
+    fn allocate_pairs() {
+      let mut store = Box::new(Store::new());
+      let idx = store.pair(1, 2);
+      assert_matches!(idx, Index(0, 0, 1));
+      let idx = store.pair(4, 10);
+      assert_matches!(idx, Index(0, 1, 1));
+
+      unsafe {
+        let p = store.pages.pairs.as_ptr() as *const u32;
+        assert_eq!(*p, 0x2);
+        assert_eq!(*p.add(1), 0x1);
+        assert_eq!(*p.add(2), 0xa);
+        assert_eq!(*p.add(3), 0x4);
+      }
+    }
+
+    #[test]
+    fn allocate_cons() {
+      let mut store = Box::new(Store::new());
+      let idx = store.pair(14, 15);
+
+      let cons_idx = store.cons(13, idx).unwrap();
+      assert_matches!(cons_idx, Index(1, 0, 0));
+      assert_matches!(store.types[1], Some(PageType::List2));
+
+      let cons_idx_2 = store.cons(12, cons_idx).unwrap();
+      assert_matches!(cons_idx_2, Index(1, 0, 1));
+
+      let cons_idx_3 = store.cons(11, cons_idx_2).unwrap();
+      assert_matches!(cons_idx_3, Index(2, 0, 0));
+      assert_matches!(store.types[2], Some(PageType::List6));
+
+      let cons_idx_4 = store.cons(10, cons_idx_3).unwrap();
+      assert_matches!(cons_idx_4, Index(2, 0, 1));
+
+      let start_list2 = unsafe { &store.pages.list2 };
+      let p = &start_list2[1][0];
+      assert_matches!(p.tail, Index(0, 0, 1));
+      assert_matches!(p.data, [13, 12]);
+
+      let start_list6 = unsafe { &store.pages.list6 };
+      let p = &start_list6[2][0];
+      assert_matches!(p.tail, Index(1, 0, 1));
+      assert_matches!(p.data, [11, 10, 0, 0, 0, 0]);
+    }
+
     // Mostly copied from the first part of main()
     #[test]
     fn alloc_session_1() {
@@ -571,7 +666,7 @@ mod tests {
       ]);
 
       let c3 = store.cons(3, Index(0, 0, 0)).unwrap();
-      assert_matches!(Some(Index(0, 1, 1)), c3);
+      assert_matches!(c3, Index(0, 1, 1));
 
       let pairs = unsafe { &store.pages.pairs[0][..4] };
       assert_matches!(pairs, [
@@ -585,7 +680,7 @@ mod tests {
       assert_matches!(c3_elems.as_slice(), [3, 1]);
 
       let c4 = store.cons(4, c3).unwrap();
-      assert_matches!(Some(Index(1, 0, 0)), c4);
+      assert_matches!(c4, Index(1, 0, 0));
 
       let c4_elems: Vec<Elem> = store.get_iter(c4).collect();
       assert_matches!(c4_elems.as_slice(), [4, 3, 1]);
