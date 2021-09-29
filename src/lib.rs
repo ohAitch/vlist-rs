@@ -173,13 +173,24 @@ trait Container: Meta + Data + DataMut + Taggable + Use + Debug {}
 impl<T: Meta+Data+DataMut+Taggable+Use+Debug> Container for T {}
 
 impl PageType {
+    /// Max number of items that can fit into a page. This is the same as
+    /// PageType::Pair.items_per_page() because a Pair is the smallest-sized item that can be
+    /// stored in a page.
+    const fn max_items() -> usize {
+      PageType::Pair.items_per_page()
+    }
+
+    const fn items_per_page(&self) -> usize {
+      match self {
+        PageType::Pair => PAGE_SIZE/mem::size_of::<Pair>(),
+        PageType::List2 => PAGE_SIZE/mem::size_of::<List<2>>(),
+        PageType::List6 => PAGE_SIZE/mem::size_of::<List<6>>(),
+        PageType::List14 => PAGE_SIZE/mem::size_of::<List<14>>(),
+      }
+    }
+
     const fn max_idx(self)-> u8 {
-        let size =  match self {
-            PageType::Pair => PAGE_SIZE/mem::size_of::<Pair>(),
-            PageType::List2 => PAGE_SIZE/mem::size_of::<List<2>>(),
-            PageType::List6 => PAGE_SIZE/mem::size_of::<List<6>>(),
-            PageType::List14 => PAGE_SIZE/mem::size_of::<List<14>>(),
-        };
+        let size = self.items_per_page();
         if size-1 > u8::MAX as usize { panic!("TODO u10 page indexes") };
         (size-1) as u8
     }
@@ -213,7 +224,7 @@ struct Store {
     full: [bool; PAGES], //FIXME bitvec
     types: [Option<PageType>; PAGES], //TODO this is an arrayvec honestly
     //FIXME u4 + hashtable backing? u8 + hashtable backing? also like sparsity / types mb
-    rc: [[u16; PAGE_SIZE/mem::size_of::<Pair>()]; PAGES],
+    rc: [[u16; PageType::max_items()]; PAGES],
     pages: Pages,
 }
 
@@ -271,13 +282,12 @@ impl Store {
     //     }
     // }
     const fn new()-> Self {
-        // let mut self_ =
-        const W: usize = PAGE_SIZE/mem::size_of::<Pair>();
-        const ZEROED: Pair = Pair([0,0]);
+        const W: usize = PageType::Pair.items_per_page();
+        const ZEROED: [Pair; W]  = [const{Pair([0,0])}; W];
         Self {
             types: [None; PAGES],
-            pages: Pages { pairs: [const{[ZEROED; W]}; PAGES] }, // basically mem::zeroed()
-            rc: [[0; W]; PAGES],
+            pages: Pages { pairs: [ZEROED; PAGES] }, // basically mem::zeroed()
+            rc: [[0; PageType::max_items()]; PAGES],
             free: [true; PAGES],
             full: [false; PAGES],
         }
@@ -570,7 +580,7 @@ mod tests {
     #[test]
     fn allocate_on_next_free_page_when_page_full() {
       let mut store = Box::new(Store::new());
-      let total = PAGE_SIZE/mem::size_of::<Pair>();
+      let total = PageType::Pair.items_per_page();
 
       let idx = store.alloc(PageType::Pair);
       assert_matches!(idx, Index(0, 0, 0));
