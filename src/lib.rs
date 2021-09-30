@@ -560,20 +560,20 @@ mod tests {
 
       assert_eq!(store.rc[0][0], 0);
       let idx = store.alloc(PageType::Pair);
-      assert_matches!(idx, Index(0, 0, 0));
+      assert_eq!(idx, Index(0, 0, 0));
       assert_eq!(store.rc[0][0], 1);
 
       let idx = store.alloc(PageType::Pair);
-      assert_matches!(idx, Index(0, 1, 0));
+      assert_eq!(idx, Index(0, 1, 0));
       assert_eq!(store.rc[0][0], 1);
       assert_eq!(store.rc[0][1], 1);
 
       let idx = store.alloc(PageType::List2);
-      assert_matches!(idx, Index(1, 0, 0));
+      assert_eq!(idx, Index(1, 0, 0));
       assert_eq!(store.rc[1][0], 1);
 
       let idx = store.alloc(PageType::List6);
-      assert_matches!(idx, Index(2, 0, 0));
+      assert_eq!(idx, Index(2, 0, 0));
       assert_eq!(store.rc[2][0], 1);
     }
 
@@ -583,26 +583,26 @@ mod tests {
       let total = PageType::Pair.items_per_page();
 
       let idx = store.alloc(PageType::Pair);
-      assert_matches!(idx, Index(0, 0, 0));
+      assert_eq!(idx, Index(0, 0, 0));
 
       store.alloc_page(PageType::List6);
 
       for n in 1..total {
         let idx = store.alloc(PageType::Pair);
-        assert_matches!(idx, Index(0, x, 0) if x as usize == n);
+        assert_eq!(idx, Index::of(0, n, 0));
       }
 
       let idx = store.alloc(PageType::Pair);
-      assert_matches!(idx, Index(2, 0, 0));
+      assert_eq!(idx, Index(2, 0, 0));
     }
 
     #[test]
     fn allocate_pairs() {
       let mut store = Box::new(Store::new());
       let idx = store.pair(1, 2);
-      assert_matches!(idx, Index(0, 0, 1));
+      assert_eq!(idx, Index(0, 0, 1));
       let idx = store.pair(4, 10);
-      assert_matches!(idx, Index(0, 1, 1));
+      assert_eq!(idx, Index(0, 1, 1));
 
       unsafe {
         let p = store.pages.pairs.as_ptr() as *const u32;
@@ -619,27 +619,27 @@ mod tests {
       let idx = store.pair(14, 15);
 
       let cons_idx = store.cons(13, idx).unwrap();
-      assert_matches!(cons_idx, Index(1, 0, 0));
+      assert_eq!(cons_idx, Index(1, 0, 0));
       assert_matches!(store.types[1], Some(PageType::List2));
 
       let cons_idx_2 = store.cons(12, cons_idx).unwrap();
-      assert_matches!(cons_idx_2, Index(1, 0, 1));
+      assert_eq!(cons_idx_2, Index(1, 0, 1));
 
       let cons_idx_3 = store.cons(11, cons_idx_2).unwrap();
-      assert_matches!(cons_idx_3, Index(2, 0, 0));
+      assert_eq!(cons_idx_3, Index(2, 0, 0));
       assert_matches!(store.types[2], Some(PageType::List6));
 
       let cons_idx_4 = store.cons(10, cons_idx_3).unwrap();
-      assert_matches!(cons_idx_4, Index(2, 0, 1));
+      assert_eq!(cons_idx_4, Index(2, 0, 1));
 
       let start_list2 = unsafe { &store.pages.list2 };
       let p = &start_list2[1][0];
-      assert_matches!(p.tail, Index(0, 0, 1));
+      assert_eq!(p.tail, Index(0, 0, 1));
       assert_matches!(p.data, [13, 12]);
 
       let start_list6 = unsafe { &store.pages.list6 };
       let p = &start_list6[2][0];
-      assert_matches!(p.tail, Index(1, 0, 1));
+      assert_eq!(p.tail, Index(1, 0, 1));
       assert_matches!(p.data, [11, 10, 0, 0, 0, 0]);
     }
 
@@ -676,7 +676,7 @@ mod tests {
       ]);
 
       let c3 = store.cons(3, Index(0, 0, 0)).unwrap();
-      assert_matches!(c3, Index(0, 1, 1));
+      assert_eq!(c3, Index(0, 1, 1));
 
       let pairs = unsafe { &store.pages.pairs[0][..4] };
       assert_matches!(pairs, [
@@ -687,10 +687,10 @@ mod tests {
       ]);
 
       let c3_elems: Vec<Elem> = store.get_iter(c3).collect();
-      assert_matches!(c3_elems.as_slice(), [3, 1]);
+      assert_eq!(c3_elems.as_slice(), [3, 1]);
 
       let c4 = store.cons(4, c3).unwrap();
-      assert_matches!(c4, Index(1, 0, 0));
+      assert_eq!(c4, Index(1, 0, 0));
 
       let c4_elems: Vec<Elem> = store.get_iter(c4).collect();
       assert_matches!(c4_elems.as_slice(), [4, 3, 1]);
@@ -704,7 +704,7 @@ mod tests {
       ]);
 
       let idx = store.alloc(PageType::Pair);
-      assert_matches!(idx, Index(0, 2, 0));
+      assert_eq!(idx, Index(0, 2, 0));
 
       let reference_count = store.rc[0];
       assert_matches!(reference_count, [3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
