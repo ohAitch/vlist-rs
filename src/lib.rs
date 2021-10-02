@@ -9,14 +9,17 @@
 #![allow(clippy::unit_arg)]
 #![allow(clippy::precedence)] // :)
 
-mod nock;
+use arrayvec::ArrayVec;
 
 use std::convert::{TryInto,TryFrom};
+use std::iter::{Peekable};
 use std::mem;
 
 use core::fmt;
 use core::fmt::{Debug};
 use core::ops::{IndexMut};
+
+mod nock;
 
 #[macro_use]
 mod sgbr {
@@ -399,6 +402,18 @@ impl Store {
             ix
         }
     }
+    fn buffer_bytes(&mut self, vals: &[u8])-> Index {
+        if let Some(0) = vals.last() {
+            panic!("Cannot represent trailing 0 bytes")
+        }
+        //TODO implementing `buffer` in terms of iterators would be possible but annoying
+        let words: Vec<u32> = vals.chunks(4).map(|b| {
+            let mut c = [0u8; 4];
+            c[..b.len()].copy_from_slice(b);
+            u32::from_le_bytes(c)
+        }).collect();
+        self.buffer(&words)
+    }
     // fn empty(&self, mut ix: Index)-> Option<bool> {
     //     loop {
     //         if self.car(ix)? != 0 {
@@ -436,6 +451,9 @@ impl Store {
     })}
     fn get_iter(&self, i: Index) -> impl Iterator<Item=Elem> + Clone + '_ {
         IndexIterator {store: self, idx:Some(i)}
+    }
+    fn get_iter_bytes(&self, i: Index) -> impl Iterator<Item=u8> + Clone + '_ {
+        ElemBytes(self.get_iter(i).peekable()).flat_map(|x|x)
     }
     fn non_free_pages(&self) -> impl Iterator<Item=usize> + Clone + '_ {
         self.free.iter().enumerate().filter(|(_,&x)| !x).map(|(i,_)|i)
@@ -497,6 +515,22 @@ impl Iterator for IndexIterator<'_> {
         }
     }
 }
+
+#[derive(Clone)]
+struct ElemBytes<I: Iterator<Item=Elem>>(Peekable<I>);
+impl<I> Iterator for ElemBytes<I> where I: Iterator<Item=Elem> {
+    type Item = ArrayVec<u8,4>;
+    fn next(&mut self)-> Option<ArrayVec<u8,4>>{
+        let mut bytes: ArrayVec<u8, 4> = self.0.next()?.to_le_bytes().into();
+        if self.0.peek().is_none() { // no further elems
+            let last_nonzero = bytes.iter().rposition(|x| *x != 0 );
+            let trailing = 1 + last_nonzero.expect("Trailing zero word");
+            bytes.truncate(trailing) // drop zero bytes at end of buffer
+        };
+        Some(bytes)
+    }
+}
+
 
 #[derive(Debug)]
 struct Row<'a, T: Debug + Sized>{
@@ -719,6 +753,15 @@ mod tests {
       assert_matches!(buffer_elems[..],
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
       );
+    }
+
+    #[test]
+    fn string_test() {
+      let mut store = Box::new(Store::new());
+
+      let buffer: Index = store.buffer_bytes(b"abcde");
+      let bytes: Vec<u8> = store.get_iter_bytes(buffer).collect::<Vec<_>>();
+      assert_eq!(b"abcde", bytes.as_slice());
     }
 
     #[test]
