@@ -10,6 +10,7 @@
 #![allow(clippy::precedence)] // :)
 
 use arrayvec::ArrayVec;
+use bitvec::prelude::*;
 
 use std::convert::{TryInto,TryFrom};
 use std::iter::{Peekable};
@@ -222,9 +223,11 @@ union Pages {
     list254: page_arr!(List<254>),*/
 }
 
+pub type PageFlags = BitArr!(for PAGES);
+
 struct Store {
-    free: [bool; PAGES], //FIXME bitvec
-    full: [bool; PAGES], //FIXME bitvec
+    free: PageFlags,
+    full: PageFlags,
     types: [Option<PageType>; PAGES], //TODO this is an arrayvec honestly
     //FIXME u4 + hashtable backing? u8 + hashtable backing? also like sparsity / types mb
     rc: [[u16; PageType::max_items()]; PAGES],
@@ -244,27 +247,33 @@ impl IndexMut<Index> for Store {
 
 impl Store {
     fn alloc_page(&mut self, t: PageType) -> u16 {
-        let i = self.free.iter().position(|x| *x).expect("OOM");
-        self.free[i] = false;
+        let i = self.free.iter().by_val().position(|x| x).expect("OOM");
+        self.free.get_mut(i).unwrap().set(false);
         self.types[i] = Some(t);
         u16::try_from(i).unwrap()
     }
     fn alloc(&mut self, t: PageType)-> Index {
-        for (page,full) in self.full.iter_mut().enumerate().filter(|(_,full)| !**full){
+        let mut new_index = None;
+        for (page, mut full) in self.full.iter_mut().enumerate().filter(|(_, full)| !**full) {
             match self.types[page] {
                 None => {
-                    self.free[page] = false;
+                    self.free.get_mut(page).unwrap().set(false);
                     self.types[page] = Some(t);
-                    return self.gain(Index::of(page,0,0))
+                    new_index = Some(Index::of(page, 0, 0));
+                    break;
                 },
                 Some(tne) if tne != t => continue,
                 Some(_) => {
-                    let i: usize = self.rc[page].iter().position(|x|*x==0).expect("page was not full");
+                    let i: usize = self.rc[page].iter().position(|x|*x==0).unwrap_or_else(|| panic!("page {} was not full", page));
                     let last: usize = t.max_idx().into();
-                    if !(0..=last).contains(&(i+1)) {*full=true};
-                    return self.gain(Index::of(page,i,0))
+                    if !(0..=last).contains(&(i+1)) { full.set(true) }
+                    new_index = Some(Index::of(page, i, 0));
+                    break;
                 },
             }
+        }
+        if let Some(idx) = new_index {
+          return self.gain(idx)
         }
         panic!("OOM")
     }
@@ -291,8 +300,8 @@ impl Store {
             types: [None; PAGES],
             pages: Pages { pairs: [ZEROED; PAGES] }, // basically mem::zeroed()
             rc: [[0; PageType::max_items()]; PAGES],
-            free: [true; PAGES],
-            full: [false; PAGES],
+            free: bitarr![1; PAGES],
+            full: bitarr![0; PAGES],
         }
     }
     // fn lookup(page:&[impl Container], at: usize) -> &impl Container {
@@ -456,7 +465,7 @@ impl Store {
         ElemBytes(self.get_iter(i).peekable()).flat_map(|x|x)
     }
     fn non_free_pages(&self) -> impl Iterator<Item=usize> + Clone + '_ {
-        self.free.iter().enumerate().filter(|(_,&x)| !x).map(|(i,_)|i)
+        self.free.as_bitslice().iter().enumerate().filter(|(_, x)| !**x).map(|(i,_)|i)
     }
 }
 
