@@ -425,30 +425,12 @@ impl Store {
     //         }
     //     }
     // }
-    fn grab_page(&self, page: u16)-> Option<impl Iterator<Item=&dyn Container>+Clone> { Some({
-        let p = page as usize;
-        std::iter::empty()
-        .chain((
-            match self.types[p]? {
-                PageType::Pair => unsafe {&self.pages.pairs[p][..]}, _ => &[]
-            }).iter().map(|x|->&dyn Container {x}))
-        .chain((
-            match self.types[p]? {
-                PageType::List2 => unsafe {&self.pages.list2[p][..]}, _ => &[]
-            }).iter().map(|x|->&dyn Container {x}))
-        .chain((
-            match self.types[p]? {
-                PageType::List6 => unsafe {&self.pages.list6[p][..]}, _ => &[]
-            }).iter().map(|x|->&dyn Container {x}))
-        .chain((
-            match self.types[p]? {
-                PageType::List14 => unsafe {&self.pages.list14[p][..]}, _ => &[]
-            }).iter().map(|x|->&dyn Container {x}))
-        //
-        //     PageType::List2 => unsafe {&self.pages.list2[page as usize].iter().map(|x|->&dyn Container {x})},
-        //     PageType::List6 => unsafe {&self.pages.list6[page as usize].iter().map(|x|->&dyn Container {x})},
-        // }
+    fn grab_page<'a>(&'a self, page: u16)-> Option<PageIterator<'a>> { Some({
+        let page = page as usize;
+        let ty = self.types[page]?;
+        PageIterator::new(ty, page, self)
     })}
+
     fn get_iter(&self, i: Index) -> impl Iterator<Item=Elem> + Clone + '_ {
         IndexIterator {store: self, idx:Some(i)}
     }
@@ -494,6 +476,42 @@ mod print {
     }
     impl<T: Clone> Clone for Lined<T> {fn clone(&self) -> Self { Self(self.0.clone())}}
 }
+
+#[derive(Clone)]
+struct PageIterator<'a> {
+  idx: usize,
+  ty: PageType,
+  page: usize,
+  store: &'a Store
+}
+
+impl<'a> PageIterator<'a> {
+  fn new(ty: PageType, page: usize, store: &'a Store) -> Self {
+    PageIterator {
+      idx: 0,
+      ty,
+      page,
+      store
+    }
+  }
+}
+
+impl<'a> Iterator for PageIterator<'a> {
+  type Item = &'a dyn Container;
+  fn next(&mut self) -> Option<Self::Item> {
+    unsafe {
+      let ptr: &dyn Container = match self.ty {
+        PageType::Pair => self.store.pages.pairs[self.page].get(self.idx)? as &dyn Container,
+        PageType::List2 => self.store.pages.list2[self.page].get(self.idx)? as &dyn Container,
+        PageType::List6 => self.store.pages.list6[self.page].get(self.idx)? as &dyn Container,
+        PageType::List14 => self.store.pages.list14[self.page].get(self.idx)? as &dyn Container,
+      };
+      self.idx += 1;
+      Some(ptr)
+    }
+  }
+}
+
 
 #[derive(Clone)]
 struct IndexIterator<'a> {
