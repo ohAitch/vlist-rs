@@ -435,7 +435,7 @@ impl Store {
         IndexIterator {store: self, idx:Some(i)}
     }
     fn get_iter_bytes(&self, i: Index) -> impl Iterator<Item=u8> + Clone + '_ {
-        ElemBytes(self.get_iter(i).peekable()).flat_map(|x|x)
+        ElemBytes(self.get_iter(i).peekable()).flatten()
     }
     fn non_free_pages(&self) -> impl Iterator<Item=usize> + Clone + '_ {
         self.free.iter().enumerate().filter(|(_,&x)| !x).map(|(i,_)|i)
