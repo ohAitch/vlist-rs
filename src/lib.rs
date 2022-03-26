@@ -1,4 +1,4 @@
-#![feature(const_panic)]
+#![feature(arbitrary_enum_discriminant)]
 #![allow(incomplete_features)] #![feature(inline_const)]
 #![feature(untagged_unions)]
 #![feature(core_intrinsics)]
