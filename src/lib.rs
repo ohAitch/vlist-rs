@@ -34,7 +34,7 @@ mod sgbr {
     }
 }
 
-//TODO 4096 maybe
+//TODO 4096 maybe  L: this should be a test case - allocate a large thing that doesn't fit
 const PAGE_SIZE: usize = 128;
 const PAGES: usize = 1024;
 type Elem = u32;
@@ -280,7 +280,7 @@ impl Store {
     //         self.rc[page as usize][list as usize] -= 1;
     //         if self.rc[page as usize][list as usize] > 0 { break; }
     //         //TODO fix used
-    //         if let Some(Ok(idx)) = self.cdr(idx){} else { break; }
+    //         if Some(Ok(idx)) = self.cdr(idx){} else { break; }
     //         //TODO free pages ever?
     //     }
     // }
@@ -414,17 +414,6 @@ impl Store {
         }).collect();
         self.buffer(&words)
     }
-    // fn empty(&self, mut ix: Index)-> Option<bool> {
-    //     loop {
-    //         if self.car(ix)? != 0 {
-    //             return Some(false);
-    //         }
-    //         match self.cdr(ix){
-    //             None => return Some(true),
-    //             Some(iix) => ix = iix
-    //         }
-    //     }
-    // }
 
     fn grab_page(&self, page: u16)-> Option<impl Iterator<Item=&dyn Container>+Clone> {
         let page = page as usize;

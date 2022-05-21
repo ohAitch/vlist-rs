@@ -13,6 +13,31 @@ use crate::{Elem, Store, Index};
 type Axis = u32;
 type Offset = usize;
 
+// if  (   thing  ==     0    )    then  foo  else    bar
+// [   [   thing  .      0    ]=   ]?{   foo   }{      bar  }
+// dup dup $thing swap lit(0) eq? if[+2] $foo else[+1] bar (fi)
+//                                   \----------------^
+//                                                \------------^
+//
+// (cons (a + 1) (2 * b) )
+// [     $a+1   .   $2*b   ]
+// dup   $a+1 swap  $2*b  cons
+//
+//
+// let  a  1   ...
+// [     a=1    .]
+// dup  lit(1)  let
+
+// throw
+// !!
+// get(0)
+
+// let a  (|| printf("hi")) ; a()
+// [     a=...             .] a()
+// dup lit(some code)    pin  run(2)
+//                             0b10   // /[2 a b] => a
+//                        nock([a, stuff], a)
+
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 enum Op {
@@ -73,8 +98,8 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
     let code = VecDeque::from_iter(code.iter().copied());
     let mut retn: Vec<VecDeque<Op>> = vec![code];
     //
-    const CONS: Elem = 0xcccc_cccc;
-    const SNOC: Elem = 0xcccc_dddd;
+    const CONS: Elem = 0x8ccc_cccc;
+    const SNOC: Elem = 0x8ccc_dddd;
     let mut stack: Vec<Elem> = vec![];
 
     fn lose(stack: &mut Vec<Elem>, subj: Elem){
@@ -98,7 +123,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
         let (car, cdr) = match op {
             CONS => (pop, *subj),
             SNOC => (*subj, pop),
-            _ => panic!()
+            _ => unreachable!()
         };
         let cel = match cdr.into() {
             Noun::Cel(ix) => heap.cons(car,ix).expect("Bad index"),
@@ -131,7 +156,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                     if !as_bool(subj) { code.drain(..ofs); }
                     subj = stack.pop().expect("Underflow: no stack after if"); // bool precludes cons
                 },
-                //
+                //                                  [ subject . code ]*
                 Op::Nok => {
                     retn.push(code); code = compile(heap,subj);
                     subj = stack.pop().expect("Underflow: no subject for eval");
@@ -161,9 +186,12 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Op::Hint => {
                     do_cons();
                     println!("hint: {:?}", Noun::from(subj));
-                    subj = stack.pop().unwrap() //TODO
+                    //TODO implement hints
+                    subj = stack.pop().expect("Underflow: no stack after hint");
                 }
-                Op::Thin => {}
+                Op::Thin => {
+                    todo!("Pop hint-stack");
+                }
                 Op::Scry => {panic!("No scry handler")}
             }
         }
@@ -206,11 +234,44 @@ fn compile(heap: &Store, e: Elem) -> VecDeque<Op> {
         }
     }).collect()
 }
-fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
+
+// L: story1: build obvious version of unify-as-isEqual - take two arguments and compare them without leaking them. No perfenhancements, no memory freeing.
+// deep unification- two things, tails match, rewrite tail to point to the other, can't drop the whole thing because someone else is hanging onto the whole thing, but parts of them need to be deduplicated.
+// TODO: what dedupe guarantees does the unify operator actually provide?
+// TODO: separate ewpic for accurate vs performant nock interpreter.
+// L: unify story2: what to do about hash memoization (in urbit, check for equlity is amortized fast,
+// q1: want to do hashing? -> story: create contrived test case that without hashing is too slow. Is it a test case we are about?
+// q2: the name unify - the pair of test cases for that- create either two copies of a large byte buffer and unify them and assert
+// that the total memory in use is less than 2 of that byte buffer... or create 2 copies of a deeply nested tree structure and assert that the pointer you get back out is... aaa, nvm
+//  a way this can go wrong- it frees something that something else is pointing into because you messed up reference counts- this should be a test for unify.
+// 3rd consideration- false positives, false negatives? subcomponent- pointer to compiled code is different from just raw code? Or ...
+//  data structure optimization should not-
+// need optimized equality algos for things represented in clever ways (that aren't built yet) - i.e. bit streams -
+// - that are represented as sequence of bytes with a message on the pointer saying- only go one at a time - want to add that. 32 bitwise comaprison for byte streams, not byte by byte plz.
+// leave a t
+// TODO detect when things are oif the same optimized representation type and detect when it has an equality special case
+// TODO add bit streams - and then need equality for them
+fn unify(a: Elem, b: Elem) -> bool {
+    if a == b { return true }
+    use Noun::*;
+    match (a.into(),b.into()) {
+        (Ind(a), Ind(b)) => {
+            // compare the bytes
+            false //TODO
+        },
+        (Cel(a), Cel(b)) => {
+            let ((ah, at), (bh, bt))) = todo!("uncons both").unwrap("Invalid pointer");
+            unify(ah, bh) && unify(at,bt)
+        },
+        _ => false
+    }
+}
+
+
 fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
     assert!(ax != 0);
     //TODO indirect
-    let mut a = Noun::from(e);
+    let mut a = Noun::from(e);                                    //  0b10  0b0000.0000.0000.0010
     for bit in (0..32usize).into_iter().rev()
                       .skip_while(|bit| 0 == ax & 1<<bit).skip(1) {
         // dbg!(&a, ax, bit, ax & 1<<bit);
@@ -236,6 +297,19 @@ fn heap() -> &'static mut Store {Box::leak(Box::new(Store::new()))}
 mod test {
     use super::*;
     #[test]
+    fn inc(){
+        use Op::*;
+        assert_eq!(3, nybble(heap(), 2, &[Inc]));
+    }
+
+    #[test]
+    #[should_panic(expected = "is_atom")]
+    fn inc_cel(){
+        use Op::*;
+        nybble(heap(), 0, &[Dup, Cons, Inc]);
+    }
+
+    #[test]
     fn dup_inc(){
         use Op::*;
         assert_eq!(Noun::Cel(Index(0,0,1)), Noun::from(
@@ -247,10 +321,10 @@ mod test {
     fn three(){
         use Op::*;
         let store = heap();
-        assert_eq!(Noun::Cel(Index(1,0,0)),
+        assert_eq!(Noun::Cel(Index(1,0,0)),                                                //[0 [1 2]]   vs
             Noun::from(nybble(store, 1, &[Dup, Inc, Cons, Dup, Lit(0), Pin]))
         );
-        // println!("{:?}",Elems(&store));
+        // println!("{:?}",Elems(&store));                    [    +    ]     [      0     .]          .] := . ++ ]
     }
 
     #[test]
@@ -262,10 +336,10 @@ mod test {
 
     #[test]
     fn axe(){
-        use Op::*;
-        assert_eq!(1, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)]));
-        assert_eq!(2, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)]));
-    }
+        use Op::*;                              //1         1 1   1 2  12  12 12 [12 12]  1
+        assert_eq!(1, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)]));          // 0b110
+        assert_eq!(2, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)]));  // 0b10 0b11
+    }                                                   // [    +     ]    [    ]      /2       /3
 
     #[test]
     fn if_else(){
@@ -321,7 +395,7 @@ mod test {
         }
     }
 
-    fn program<'a, B: Copy + IntoIterator<Item=&'a Op>>(a: &mut Store, b: B) -> Elem {
+    fn program<'a>(a: &mut Store, b: impl Copy + IntoIterator<Item=&'a Op>) -> Elem {
         Noun::Ind(
             a.buffer(b.into_iter().map(|x|x.enc()).collect::<Vec<_>>().flat())
         ).into()
@@ -330,7 +404,7 @@ mod test {
     fn exec(){
         use Op::*;
         let store = heap();
-        // println!("{:?}",Elems(&store));
+        // println!("{:?}",Elems(&store));       [    1      +   +    +    .]
         let prog = program(store,&[Dup, Lit(1), Inc, Inc, Inc, Pin]);
         // println!("{:?}", Listerator(store.get_iter(match prog.into() { Noun::Ind(x) => x, _=> panic!()})));
         let output = nybble(store, prog, &[Run(1)]).into();
@@ -345,13 +419,14 @@ mod test {
     fn decrement(){
         use Op::*;
         let store = heap();
-        let prog = program(store,&[
-            Dup,
-              Dup, Get(2), Inc, Exch, Get(7), Eql,
-            If(2), Get(2),
-            Fwd(7),
-              Dup, Get(2), Inc, Exch, Get(3), Cons, Run(6)
-        ]);
+        let prog = program(store,&[                                                 //   /2    /6    /7
+            Dup,                                                 //  [                          //  [acc=0 dec in=10]
+              Dup, Get(2), Inc, Exch, Get(7), Eql,               //     [ /2 + . /7 ]=
+            If(2), Get(2),                                       //  ]?{ /2
+            Fwd(7),                                              //  }{
+              Dup, Get(2), Inc, Exch, Get(3), Cons, Run(6)       //    [ /2 + . /3 ] !6
+        ]);                                                      //  }              dec(args[0]++, ...args[1...])
         assert_eq!(9, nybble(store, 10, &[Dup, Lit(prog), Pin, Dup, Lit(0), Pin, Run(6)]));
-    }
-}
+    }                                                  //  [    (dec)    .]     [     0     .]      !6
+}                                    //        10                       [dec 10]      [0 dec 10]    dec(acc=0,dec,in=10)
+                                     //                                               [/2 /6 /7]    6 = 0b110 "args[1]"
