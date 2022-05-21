@@ -170,7 +170,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                     do_cons();
                     let to = stack.pop().expect("Underflow: no two values to compare");
                     reify_cons(heap, &mut stack, &mut subj);
-                    subj = loobean(subj == to || unify(subj,to)) //TODO lose
+                    subj = loobean(subj == to || unify(heap, subj,to)) //TODO lose
                 }
                 Op::Lit(e) => { lose(&mut stack, subj); subj = e}
                 Op::Get(ax) => {
@@ -251,20 +251,29 @@ fn compile(heap: &Store, e: Elem) -> VecDeque<Op> {
 // leave a t
 // TODO detect when things are oif the same optimized representation type and detect when it has an equality special case
 // TODO add bit streams - and then need equality for them
-fn unify(a: Elem, b: Elem) -> bool {
+// TODO heap: &mut Store, actually unify
+fn unify(heap: &Store, a: Elem, b: Elem) -> bool {
     if a == b { return true }
-    use Noun::*;
-    match (a.into(),b.into()) {
-        (Ind(a), Ind(b)) => {
-            // compare the bytes
-            false //TODO
-        },
-        (Cel(a), Cel(b)) => {
-            let ((ah, at), (bh, bt))) = todo!("uncons both").unwrap("Invalid pointer");
-            unify(ah, bh) && unify(at,bt)
-        },
-        _ => false
-    }
+    // use Noun::*;
+    // match (a.into(),b.into()) {
+    //     //TODO test any of this
+    //     // (Ind(a), Ind(b)) => {
+    //     //     if len(a) != len(b) { return false }
+    //     //     for (ax,bx) in iter::zip(a.iter(), b.iter()) {
+    //     //         if ax != bx { return false }
+    //     //     }
+    //     //     return true
+    //     // },
+    //     // (Cel(a), Cel(b)) => {
+    //     //     if len(a) != len(b) { return false }
+    //     //     for (ax,bx) in iter::zip(a.iter(), b.iter()) {
+    //     //         if !unify(ax, bx) { return false }
+    //     //     }
+    //     //     return true
+    //     // },
+    //     _ =>
+            false
+    // }
 }
 
 

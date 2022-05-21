@@ -280,7 +280,7 @@ impl Store {
     //         self.rc[page as usize][list as usize] -= 1;
     //         if self.rc[page as usize][list as usize] > 0 { break; }
     //         //TODO fix used
-    //         if Some(Ok(idx)) = self.cdr(idx){} else { break; }
+    //         if let Some(Ok(idx)) = self.cdr(idx){} else { break; }
     //         //TODO free pages ever?
     //     }
     // }
