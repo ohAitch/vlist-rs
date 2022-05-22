@@ -102,15 +102,17 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
     const SNOC: Elem = 0x8ccc_dddd;
     let mut stack: Vec<Elem> = vec![];
 
-    fn lose(stack: &mut Vec<Elem>, subj: Elem){
-        //TODO actual lose
+    fn lose_in(heap: &mut Store, stack: &mut Vec<Elem>, subj: Elem){
         if ![CONS,SNOC].contains(&subj) { return }
         let mut deep = 1u32;
         while deep > 0 {
             if ![CONS,SNOC].contains(&stack.pop().expect("Cons-free underflow")) {
                 deep += 1
             }
-            else { deep -= 1; }
+            else {
+                deep -= 1;
+                heap.lose(subj); //TODO test
+            }
         }
     }
     fn reify_cons(heap: &mut Store, stack: &mut Vec<Elem>, subj: &mut Elem){
@@ -141,6 +143,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Noun::from(subj)
             );}
             let mut do_cons = || { reify_cons(heap, &mut stack, &mut subj) };
+            let mut lose = |subj| { lose_in(heap, &mut stack, subj) };
             match inst {
                 Op::Dup => { do_cons(); stack.push(subj) },
                 Op::Exch => {
@@ -162,7 +165,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                     subj = stack.pop().expect("Underflow: no subject for eval");
                 }
                 Op::Cel => {
-                    lose(&mut stack, subj); //TODO drop shenanigans
+                    lose(subj); //TODO drop shenanigans
                     subj = loobean(is_cell(subj) || subj == CONS || subj == SNOC)
                 },
                 Op::Inc => { assert!(is_atom(subj)); subj += 1 }, //TODO indirect
@@ -170,9 +173,9 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                     do_cons();
                     let to = stack.pop().expect("Underflow: no two values to compare");
                     reify_cons(heap, &mut stack, &mut subj);
-                    subj = loobean(subj == to || unify(heap, subj,to)) //TODO lose
+                    subj = loobean(subj == to || unify(heap, subj, to))
                 }
-                Op::Lit(e) => { lose(&mut stack, subj); subj = e}
+                Op::Lit(e) => { lose(subj); subj = e}
                 Op::Get(ax) => {
                     do_cons(); //TODO or navigate them properly
                     //TODO lose rest
@@ -253,6 +256,7 @@ fn compile(heap: &Store, e: Elem) -> VecDeque<Op> {
 // TODO add bit streams - and then need equality for them
 // TODO heap: &mut Store, actually unify
 fn unify(heap: &Store, a: Elem, b: Elem) -> bool {
+    //TODO lose a, b
     if a == b { return true }
     // use Noun::*;
     // match (a.into(),b.into()) {
@@ -437,5 +441,15 @@ mod test {
         ]);                                                      //  }              dec(args[0]++, ...args[1...])
         assert_eq!(9, nybble(store, 10, &[Dup, Lit(prog), Pin, Dup, Lit(0), Pin, Run(6)]));
     }                                                  //  [    (dec)    .]     [     0     .]      !6
-}                                    //        10                       [dec 10]      [0 dec 10]    dec(acc=0,dec,in=10)
+                                     //        10                       [dec 10]      [0 dec 10]    dec(acc=0,dec,in=10)
                                      //                                               [/2 /6 /7]    6 = 0b110 "args[1]"
+
+    #[test]
+    fn reclaims_memory(){
+        use Op::*;
+        let store = heap();
+        let original_used = store.used_bytes();
+        assert_eq!(0, nybble(store, 1, &[Dup, Cons, Lit(0)]));
+        assert_eq!(original_used, store.used_bytes());
+    }
+}

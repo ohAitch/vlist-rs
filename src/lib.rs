@@ -274,16 +274,16 @@ impl Store {
         // eprintln!("{} gain {:?}",page, self.rc[page as usize]);
         idx
     }
-    // fn lose(&mut self, mut idx: Index) {
-    //     loop {
-    //         let Index(page, list, _item) = idx;
-    //         self.rc[page as usize][list as usize] -= 1;
-    //         if self.rc[page as usize][list as usize] > 0 { break; }
-    //         //TODO fix used
-    //         if let Some(Ok(idx)) = self.cdr(idx){} else { break; }
-    //         //TODO free pages ever?
-    //     }
-    // }
+    fn lose(&mut self, mut idx: Index) {
+        loop {
+            let Index(page, list, _item) = idx;
+            self.rc[page as usize][list as usize] -= 1;
+            if self.rc[page as usize][list as usize] > 0 { break; }
+            //TODO fix used
+            if let Some(Ok(idx)) = self.cdr(idx){} else { break; }
+            //TODO free pages ever?
+        }
+    }
     const fn new()-> Self {
         const W: usize = PageType::Pair.items_per_page();
         const ZEROED: [Pair; W]  = [const{Pair([0,0])}; W];
@@ -458,6 +458,9 @@ impl Store {
     }
     fn non_free_pages(&self) -> impl Iterator<Item=usize> + Clone + '_ {
         self.free.iter().enumerate().filter(|(_,&x)| !x).map(|(i,_)|i)
+    }
+    fn used_bytes(&self) -> usize {
+        unimplemented!();
     }
 }
 
