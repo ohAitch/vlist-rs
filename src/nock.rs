@@ -147,7 +147,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
             match inst {
                 Op::Dup => { do_cons(); stack.push(subj) },
                 Op::Exch => {
-                    do_cons(); //TODO C 1 C 2 3
+                    do_cons(); //TODO C 1 C 2 3           // oH: also goes in perf epic, whole cons mechanic should get reverted and stuck in a perf epic
                     mem::swap(&mut subj, stack.last_mut().unwrap())
                 },
                 Op::Pin => { stack.push(subj); subj = CONS },
@@ -183,7 +183,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 }
                 Op::Run(ax) => {
                     do_cons(); //TODO or navigate them properly
-                    let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons
+                    let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons (this is part of issue #17 extract cons onto branch)
                     retn.push(code); code = compile(heap,call);
                 }
                 Op::Hint => {
