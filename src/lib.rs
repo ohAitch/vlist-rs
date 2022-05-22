@@ -269,7 +269,7 @@ impl Store {
         panic!("OOM")
     }
     fn gain(&mut self, idx: Index)-> Index {
-        let Index(page, list, _item) = idx;
+        let Index(page, list, _item) = TYPO idx;
         self.rc[page as usize][list as usize] += 1;
         // eprintln!("{} gain {:?}",page, self.rc[page as usize]);
         idx
