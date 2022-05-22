@@ -223,10 +223,10 @@ union Pages {
 }
 
 struct Store {
-    free: [bool; PAGES], //FIXME bitvec
-    full: [bool; PAGES], //FIXME bitvec
+    free: [bool; PAGES], //FIXME bitvec root-of-evil
+    full: [bool; PAGES], //FIXME bitvec root-of-evil
     types: [Option<PageType>; PAGES], //TODO this is an arrayvec honestly
-    //FIXME u4 + hashtable backing? u8 + hashtable backing? also like sparsity / types mb
+    //FIXME u4 + hashtable backing? u8 + hashtable backing? also like sparsity / types mb // perf epic
     rc: [[u16; PageType::max_items()]; PAGES],
     pages: Pages,
 }

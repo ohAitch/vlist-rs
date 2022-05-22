@@ -115,6 +115,12 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
             }
         }
     }
+    // noun type with shared pointer to the heap
+    //  with some kind of miutable .. bullshit, presumanyly a ref sol... tuple of here's heap, here's pointer int oth eheapl..
+    // the important point... thin pointer in memory when you're not looking at it... true ither way.. rust want to be safe...
+    // involves a lot of bits all the time if you do the obvious thing...
+    // build it that way, then build an alternate unsafe, global, notice it doesn't make a difference... (sane plan)
+    // that's the sane plan / ok so what are *you(* gonna do
     fn reify_cons(heap: &mut Store, stack: &mut Vec<Elem>, subj: &mut Elem){
         if ![CONS,SNOC].contains(subj) { return }
         // println!("CONS/SNOC {:?}", Listerator(stack.iter().rev().take(2)));
@@ -283,7 +289,18 @@ fn unify(heap: &Store, a: Elem, b: Elem) -> bool {
 
 fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
     assert!(ax != 0);
-    //TODO indirect
+    //TODO indirect // oH: part of correctness, will take a while to hit
+    // takes atom, uses it as a binary address. of most 31 bits. more -> pointer. right now, implementation takes the Elem
+    // if index gets too big then it arguabl ... is a number and the
+    // if your bigint overflows to be stored ont he heap, you need to be able to read that back out of the heap to use it as an address
+    //  dereference heap level pointer to get a nock level pointer
+    // ... indirect... least sig bit order... ?
+    // traverse list from most to least significant chunk of 32b, then call accent and repeateedly call zbody. still under 10 lines
+    // a thing ... that is stupider than xbody ... traverse bigint as a seq of 31bit chunks, or 16bit chunks...
+    // worf of ... long thing... 17th bit to 1 ... ? same as ? sequewnce of? since 17 it values that you traversing using... ?
+    // ax (access) head... remainian gbits... stupid because you need to repeatedly call function to rederive that 18th but
+    // is the most signigifcant bit and you ned to throw away... but also this whole thing is an edge case... and rewriting fewer things...
+
     let mut a = Noun::from(e);                                    //  0b10  0b0000.0000.0000.0010
     for bit in (0..32usize).into_iter().rev()
                       .skip_while(|bit| 0 == ax & 1<<bit).skip(1) {
