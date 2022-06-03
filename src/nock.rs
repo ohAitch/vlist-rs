@@ -121,7 +121,7 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Op::Inc => { assert!(is_atom(subj)); subj += 1 }, //TODO indirect
                 Op::Eql => {
                     let to = stack.pop().expect("Underflow: no two values to compare");
-                    subj = loobean(subj == to || unify(subj,to)) //TODO lose
+                    subj = loobean(subj == to || unify(heap,subj,to))
                 }
                 Op::Lit(e) => { lose(&mut stack, subj); subj = e}
                 Op::Get(ax) => {
@@ -178,7 +178,30 @@ fn compile(heap: &Store, e: Elem) -> VecDeque<Op> {
         }
     }).collect()
 }
-fn unify(a: Elem, b: Elem) -> bool { false /*TODO*/ }
+fn unify(heap: &Store, a: Elem, b: Elem) -> bool {
+    //TODO lose a, b
+    if a == b { return true }
+    use Noun::*;
+    match (a.into(),b.into()) {
+        // TODO test any of this
+        (Ind(a), Ind(b)) => {
+            // if len(a) != len(b) { return false }
+            for (ax,bx) in itertools::zip(heap.get_iter(a), heap.get_iter(b)) {
+                if ax != bx { return false }
+            }
+            return true
+        },
+        (Cel(a), Cel(b)) => {
+            // if len(a) != len(b) { return false }
+            for (ax,bx) in itertools::zip(heap.get_iter(a), heap.get_iter(b)) {
+                if !unify(heap, ax, bx) { return false }
+            }
+            return true
+        },
+        _ =>
+            false
+    }
+}
 fn cdadr(mem: &Store, mut e: Elem, mut ax: Axis) -> Option<Elem> {
     assert!(ax != 0);
     //TODO indirect
@@ -237,6 +260,23 @@ mod test {
         use Op::*;
         assert_eq!(1, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(6)]));
         assert_eq!(2, nybble(heap(), 1, &[Dup, Inc, Cons, Dup, Cons, Get(2), Get(3)]));
+    }
+
+    #[test]
+    fn eq(){
+        let store = heap();
+        assert!(unify(store,1,1));
+        assert!(!unify(store,1,2));
+
+        let [a12, b12] = [0,0].map(|_| Noun::Cel(store.pair(1,2)).into());
+        assert!(unify(store,a12,b12));
+        let mut list = |x| Noun::Cel(store.buffer(x)).into();
+        let (a00,b00,a11) = (list(&[0;9]),list(&[0;9]),list(&[1;9]));
+        let l19: Vec<Elem> = (1..=9).into_iter().collect();
+        let (a19, b19) = (list(&l19), list(&l19));
+        assert!(unify(store,a00,b00));
+        assert!(!unify(store,a00,a11));
+        assert!(unify(store,a19,b19));
     }
 
     #[test]
