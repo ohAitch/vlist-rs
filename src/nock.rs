@@ -73,40 +73,19 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
     let code = VecDeque::from_iter(code.iter().copied());
     let mut retn: Vec<VecDeque<Op>> = vec![code];
     //
-    const CONS: Elem = 0xcccc_cccc;
-    const SNOC: Elem = 0xcccc_dddd;
     let mut stack: Vec<Elem> = vec![];
 
     fn lose(stack: &mut Vec<Elem>, subj: Elem){
         //TODO actual lose
-        if ![CONS,SNOC].contains(&subj) { return }
-        let mut deep = 1u32;
-        while deep > 0 {
-            if ![CONS,SNOC].contains(&stack.pop().expect("Cons-free underflow")) {
-                deep += 1
-            }
-            else { deep -= 1; }
-        }
     }
-    fn reify_cons(heap: &mut Store, stack: &mut Vec<Elem>, subj: &mut Elem){
-        if ![CONS,SNOC].contains(subj) { return }
-        // println!("CONS/SNOC {:?}", Listerator(stack.iter().rev().take(2)));
-        let op = *subj; *subj = stack.pop().unwrap();
-        reify_cons(heap, stack, subj); //head
-        let pop = *subj; *subj = stack.pop().expect("Cons underflow");
-        reify_cons(heap, stack, subj);
-        let (car, cdr) = match op {
-            CONS => (pop, *subj),
-            SNOC => (*subj, pop),
-            _ => panic!()
-        };
+    fn do_cons(heap: &mut Store, car: Elem, cdr: Elem) -> Elem {
         let cel = match cdr.into() {
             Noun::Cel(ix) => heap.cons(car,ix).expect("Bad index"),
             _ => heap.pair(car, cdr),
         };
         // println!("pop={} subj={}, car={} cdr={} -> cel={:?} {}",
         //          pop, subj, car, cdr, cel, Into::<Elem>::into(Noun::Cel(cel)));
-        *subj = Noun::Cel(cel).into()
+        Noun::Cel(cel).into()
     }
     while let Some(mut code) = retn.pop(){
         while let Some(inst) = code.pop_front() {
@@ -115,15 +94,14 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 Listerator(stack.iter().map(|x| Noun::from(*x))),
                 Noun::from(subj)
             );}
-            let mut do_cons = || { reify_cons(heap, &mut stack, &mut subj) };
+            let mut cons = |car, cdr| { do_cons(heap, car, cdr) };
             match inst {
-                Op::Dup => { do_cons(); stack.push(subj) },
+                Op::Dup => { stack.push(subj) },
                 Op::Exch => {
-                    do_cons(); //TODO C 1 C 2 3
                     mem::swap(&mut subj, stack.last_mut().unwrap())
                 },
-                Op::Pin => { stack.push(subj); subj = CONS },
-                Op::Cons => { stack.push(subj); subj = SNOC },
+                Op::Pin => { subj = cons(subj, stack.pop().unwrap())},
+                Op::Cons => { subj = cons(stack.pop().unwrap(), subj); },
                 //
                 Op::Fwd(ofs) => {code.drain(..ofs);},
                 Op::If(ofs) => {
@@ -138,28 +116,23 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
                 }
                 Op::Cel => {
                     lose(&mut stack, subj); //TODO drop shenanigans
-                    subj = loobean(is_cell(subj) || subj == CONS || subj == SNOC)
+                    subj = loobean(is_cell(subj))
                 },
                 Op::Inc => { assert!(is_atom(subj)); subj += 1 }, //TODO indirect
                 Op::Eql => {
-                    do_cons();
                     let to = stack.pop().expect("Underflow: no two values to compare");
-                    reify_cons(heap, &mut stack, &mut subj);
                     subj = loobean(subj == to || unify(subj,to)) //TODO lose
                 }
                 Op::Lit(e) => { lose(&mut stack, subj); subj = e}
                 Op::Get(ax) => {
-                    do_cons(); //TODO or navigate them properly
                     //TODO lose rest
                     subj = cdadr(heap, subj, ax).expect("Axed atom")
                 }
                 Op::Run(ax) => {
-                    do_cons(); //TODO or navigate them properly
                     let call = cdadr(heap, subj, ax).expect("Axed atom"); //TODO cons
                     retn.push(code); code = compile(heap,call);
                 }
                 Op::Hint => {
-                    do_cons();
                     println!("hint: {:?}", Noun::from(subj));
                     subj = stack.pop().unwrap() //TODO
                 }
@@ -168,7 +141,6 @@ fn nybble(heap: &mut Store, mut subj: Elem, code: &[Op]) -> Elem {
             }
         }
     }
-    reify_cons(heap, &mut stack, &mut subj);
     assert!(stack.is_empty(), "Left items on stack: {:?} {:?}",
         Listerator(stack.iter().map(|x| Noun::from(*x))),
         Noun::from(subj)
